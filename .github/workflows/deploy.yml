@@ -8,8 +8,8 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: asia-northeast1
-  SERVICE_NAME: my-ai-app  # Cloud Run上のサービス名
-  REPOSITORY: app-repo     # Artifact Registryのリポジトリ名
+  SERVICE_NAME: smartbuilder-ai  # エラーログに合わせました（自由に変更可）
+  REPOSITORY: app-repo           # Artifact Registryのリポジトリ名
 
 jobs:
   deploy:
@@ -41,4 +41,10 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          flags: "--allow-unauthenticated" # 公開アクセスを許可する場合
+          flags: "--allow-unauthenticated"
+          # 【重要】ここから下が不足していた設定です
+          env_vars: |-
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+            LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
