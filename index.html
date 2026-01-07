@@ -81,9 +81,10 @@
 </div>
 
 <script>
-    // 認証ヘッダーを付与する共通関数
     async function authFetch(url, options = {}) {
         const token = localStorage.getItem('sb_token');
+        console.log("authFetch実行中... トークン:", token ? "あり" : "なし");
+        
         if (!options.headers) options.headers = {};
         if (token) {
             options.headers['Authorization'] = `Bearer ${token}`;
@@ -91,69 +92,79 @@
         
         const res = await fetch(url, options);
         if (res.status === 401) {
-            // 認証切れならログイン画面を表示
+            console.error("認証エラー(401)が発生しました");
             showLogin();
             throw new Error('Unauthorized');
         }
         return res;
     }
 
-    // ログイン画面を表示する関数
     function showLogin() {
-        document.getElementById('loginOverlay').style.display = 'flex';
+        const overlay = document.getElementById('loginOverlay');
+        if (overlay) overlay.style.setProperty('display', 'flex', 'important');
     }
 
-    // ログイン画面を隠す関数
     function hideLogin() {
-        document.getElementById('loginOverlay').style.display = 'none';
+        console.log("hideLoginを実行します。オーバーレイを非表示にします。");
+        const overlay = document.getElementById('loginOverlay');
+        if (overlay) {
+            // classList ではなく、直接 style を書き換えることで CSS の未定義問題を回避します
+            overlay.style.setProperty('display', 'none', 'important');
+            console.log("オーバーレイの display を none に設定しました。");
+        } else {
+            console.error("エラー: loginOverlay という ID が見つかりません。");
+        }
     }
 
     async function handleLogin() {
-        const username = document.getElementById('loginId').value; // 'id' を 'username' に変更（念のため）
+        console.log("ログインボタンが押されました");
+        const id = document.getElementById('loginId').value;
         const password = document.getElementById('loginPw').value;
         
         try {
             const res = await fetch('/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }) // キー名をバックエンドに合わせて調整
+                body: JSON.stringify({ username: id, password: password })
             });
             
             if (res.ok) {
                 const data = await res.json();
+                console.log("ログイン成功。受信トークン:", data.token);
                 localStorage.setItem('sb_token', data.token);
                 
-                // クラス追加ではなく、直接スタイルを 'none' にして確実に消す
+                // 描画処理(sync)の前にまず隠す
                 hideLogin();
-                
-                // データ同期
                 await sync();
             } else {
-                alert("ログインに失敗しました。ユーザー名とパスワードを確認してください。");
+                const errorData = await res.json();
+                console.warn("ログイン失敗:", errorData);
+                alert("ログインに失敗しました: " + (errorData.detail || "不明なエラー"));
             }
         } catch (e) {
-            console.error(e);
-            alert("通信エラーが発生しました。");
+            console.error("通信エラー:", e);
         }
     }
 
     async function sync() {
+        console.log("データ同期(sync)を開始します");
         try {
             const res = await authFetch('/api/status');
             const data = await res.json();
-            console.log("データ取得成功:", data);
+            console.log("データ取得完了:", data);
+
+            // ここに以前の描画処理（HTMLの生成など）があるはずです。
+            // もし描画処理の中でエラーが起きても、hideLoginは既に実行されているはずです。
             
-            // ここでデータの描画処理を行う
-            // ... (既存の描画ロジック) ...
-            
-            hideLogin();
+            hideLogin(); 
         } catch (e) {
+            console.error("sync中にエラー発生:", e);
             showLogin();
         }
     }
 
-    // 起動時のチェック
     window.onload = () => {
+        console.log("ページが読み込まれました");
         if (localStorage.getItem('sb_token')) {
             sync();
         } else {
