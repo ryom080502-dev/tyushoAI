@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartBuilder AI</title>
-    <script src="https://cdn.tailwindcss.com"></script> <style>
-        /* 【重要】これがないと classList.add('hidden') が効きません */
-        .hidden { display: none !important; }
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 直接 display:none を指定するクラスを定義 */
+        .hidden-custom { display: none !important; }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -16,99 +17,117 @@
             <h2 class="text-3xl font-black text-slate-800 mb-2">SmartBuilder AI</h2>
             <p class="text-slate-500 mb-8 font-medium">ログインして開始してください</p>
             <div class="space-y-4">
-                <input type="text" id="loginId" placeholder="ユーザーID" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <input type="password" id="loginPw" placeholder="パスワード" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button onclick="handleLogin()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-blue-600 transition-all">ログイン</button>
+                <input type="text" id="username" placeholder="ユーザーID" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" id="password" placeholder="パスワード" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="login()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-blue-600 transition-all">ログイン</button>
             </div>
+            <div id="message" class="text-red-500 mt-4 text-center font-bold"></div>
         </div>
     </div>
 
     <div id="mainContent" class="p-8">
-        <h1 class="text-2xl font-bold">ログイン成功！</h1>
-        <p>ここにアプリのメイン機能を記述します。</p>
-        <div id="dataDisplay" class="mt-4 p-4 bg-white rounded shadow">
-            データ読み込み中...
+        <div class="max-w-4xl mx-auto">
+            <header class="flex justify-between items-center mb-8">
+                <h1 class="text-2xl font-bold text-slate-800">管理パネル</h1>
+                <button onclick="logout()" class="text-slate-500 hover:text-red-500">ログアウト</button>
+            </header>
+            <div id="statusBoard" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-3xl shadow-sm">読み込み中...</div>
+            </div>
         </div>
-        <button onclick="logout()" class="mt-4 text-red-500 underline">ログアウト</button>
     </div>
 
-    <script>
-        // 1. 認証付き通信
-        async function authFetch(url, options = {}) {
-            const token = localStorage.getItem('sb_token');
-            if (!options.headers) options.headers = {};
-            if (token) options.headers['Authorization'] = `Bearer ${token}`;
+<script>
+    // 1. 通信用の共通関数
+    async function authFetch(url, options = {}) {
+        const token = localStorage.getItem('sb_token');
+        if (!options.headers) options.headers = {};
+        if (token) options.headers['Authorization'] = `Bearer ${token}`;
+        
+        const res = await fetch(url, options);
+        if (res.status === 401) {
+            showLogin();
+            throw new Error('Unauthorized');
+        }
+        return res;
+    }
+
+    function showLogin() {
+        document.getElementById('loginOverlay').classList.remove('hidden-custom');
+    }
+
+    function hideLogin() {
+        console.log("hideLoginを実行: 画面を隠します");
+        const overlay = document.getElementById('loginOverlay');
+        overlay.classList.add('hidden-custom');
+    }
+
+    // 2. ログイン実行関数
+    async function login() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const msg = document.getElementById('message');
+        
+        msg.innerText = "認証中...";
+
+        try {
+            const res = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // main.py の data.get("id") に合わせて送信
+                body: JSON.stringify({ id: u, password: p })
+            });
             
-            const res = await fetch(url, options);
-            if (res.status === 401) {
-                showLogin();
-                throw new Error('Unauthorized');
-            }
-            return res;
-        }
-
-        function showLogin() {
-            document.getElementById('loginOverlay').classList.remove('hidden');
-        }
-
-        function hideLogin() {
-            document.getElementById('loginOverlay').classList.add('hidden');
-        }
-
-        // 2. ログイン処理
-        async function handleLogin() {
-            const id = document.getElementById('loginId').value;
-            const password = document.getElementById('loginPw').value;
-            
-            console.log("ログイン試行中:", id);
-
-            try {
-                const res = await fetch('/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: id, password: password }) // main.pyのidに合わせる
-                });
-                
-                if (res.ok) {
-                    const data = await res.json();
-                    localStorage.setItem('sb_token', data.token);
-                    console.log("ログイン成功");
-                    hideLogin();
-                    await sync();
-                } else {
-                    alert("IDまたはパスワードが正しくありません");
-                }
-            } catch (e) {
-                console.error(e);
-                alert("サーバーと通信できません");
-            }
-        }
-
-        // 3. データ取得と画面更新
-        async function sync() {
-            try {
-                const res = await authFetch('/api/status');
+            if (res.ok) {
                 const data = await res.json();
-                console.log("同期成功:", data);
-                
-                // 画面にデータを表示する例
-                document.getElementById('dataDisplay').innerText = 
-                    `レコード数: ${data.records.length} 件 / ユーザー: ${Object.keys(data.users).length} 名`;
-                
+                localStorage.setItem('sb_token', data.token);
+                console.log("ログイン成功");
                 hideLogin();
-            } catch (e) {
-                console.log("未ログイン状態");
-                showLogin();
+                await sync();
+            } else {
+                msg.innerText = "IDまたはパスワードが違います";
             }
+        } catch (e) {
+            msg.innerText = "サーバーと通信できませんでした";
         }
+    }
 
-        function logout() {
-            localStorage.removeItem('sb_token');
-            location.reload();
+    // 3. データ同期関数
+    async function sync() {
+        try {
+            const res = await authFetch('/api/status');
+            const data = await res.json();
+            
+            // 画面の書き換え（例）
+            document.getElementById('statusBoard').innerHTML = `
+                <div class="bg-white p-6 rounded-3xl shadow-sm">
+                    <p class="text-slate-500 text-sm">登録レコード</p>
+                    <p class="text-3xl font-black">${data.records.length} 件</p>
+                </div>
+                <div class="bg-white p-6 rounded-3xl shadow-sm">
+                    <p class="text-slate-500 text-sm">ユーザー数</p>
+                    <p class="text-3xl font-black">${Object.keys(data.users).length} 名</p>
+                </div>
+            `;
+            hideLogin();
+        } catch (e) {
+            showLogin();
         }
+    }
 
-        // 起動時に自動実行
-        window.onload = sync;
-    </script>
+    function logout() {
+        localStorage.removeItem('sb_token');
+        location.reload();
+    }
+
+    // 起動時にトークンの有無を確認
+    window.onload = () => {
+        if (localStorage.getItem('sb_token')) {
+            sync();
+        } else {
+            showLogin();
+        }
+    };
+</script>
 </body>
 </html>
