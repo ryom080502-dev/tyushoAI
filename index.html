@@ -2,153 +2,107 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartBuilder AI - 領収書解析</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .hidden { display: none !important; }
-    </style>
+    <style>.hidden { display: none !important; }</style>
 </head>
 <body class="bg-slate-50 min-h-screen">
-
     <div id="loginOverlay" class="fixed inset-0 bg-slate-900 z-[100] flex items-center justify-center p-6">
         <div class="bg-white w-full max-w-md p-10 rounded-[2.5rem] shadow-2xl">
-            <h2 class="text-3xl font-black text-slate-800 mb-2">SmartBuilder AI</h2>
-            <p class="text-slate-500 mb-8 font-medium">ログインして開始してください</p>
-            <div class="space-y-4">
-                <input type="text" id="username" placeholder="ユーザーID" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <input type="password" id="password" placeholder="パスワード" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button onclick="login()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-blue-600 transition-all">ログイン</button>
-            </div>
-            <div id="loginMessage" class="text-red-500 mt-4 text-center"></div>
+            <h2 class="text-3xl font-black mb-6">SmartBuilder AI</h2>
+            <input type="text" id="username" placeholder="ユーザーID" class="w-full p-4 mb-4 bg-slate-50 border rounded-2xl">
+            <input type="password" id="password" placeholder="パスワード" class="w-full p-4 mb-6 bg-slate-50 border rounded-2xl">
+            <button onclick="login()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl">ログイン</button>
         </div>
     </div>
 
     <div id="mainContent" class="max-w-4xl mx-auto p-8">
-        <header class="flex justify-between items-center mb-10">
-            <h1 class="text-3xl font-black text-slate-800">領収書解析スキャン</h1>
-            <button onclick="logout()" class="text-slate-400 hover:text-red-500 font-medium">ログアウト</button>
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-black">領収書ダッシュボード</h1>
+            <div class="flex gap-4">
+                <button onclick="loadStatus()" class="bg-white border px-4 py-2 rounded-xl text-sm font-bold">更新</button>
+                <button onclick="logout()" class="text-red-500 font-bold">ログアウト</button>
+            </div>
         </header>
 
-        <div class="bg-white p-8 rounded-[2rem] shadow-sm mb-8">
-            <h2 class="text-lg font-bold mb-4">領収書をアップロード</h2>
-            <div class="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-10 bg-slate-50">
-                <input type="file" id="receiptFile" class="mb-4">
-                <button onclick="uploadReceipt()" id="uploadBtn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all">解析を実行する</button>
-            </div>
-            <div id="uploadStatus" class="mt-4 text-center text-blue-600 font-medium"></div>
+        <div class="bg-white p-8 rounded-[2rem] shadow-sm mb-10">
+            <input type="file" id="receiptFile" class="mb-4">
+            <button onclick="uploadReceipt()" id="uploadBtn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold">解析実行</button>
+            <p id="statusMsg" class="mt-2 text-blue-600"></p>
         </div>
 
-        <div id="resultArea" class="space-y-4">
-            <h2 class="text-xl font-bold text-slate-800 mb-4">解析結果</h2>
-            <div id="recordsList" class="grid gap-4">
-                <p class="text-slate-400">まだデータがありません。領収書をスキャンしてください。</p>
+        <div id="recordsList" class="grid gap-4">
             </div>
-        </div>
     </div>
 
     <script>
-        // 共通：認証付き通信
         async function authFetch(url, options = {}) {
             const token = localStorage.getItem('sb_token');
             if (!options.headers) options.headers = {};
             if (token) options.headers['Authorization'] = `Bearer ${token}`;
             const res = await fetch(url, options);
-            if (res.status === 401) {
-                showLogin();
-                throw new Error('Unauthorized');
-            }
+            if (res.status === 401) { showLogin(); throw new Error('Unauthorized'); }
             return res;
         }
 
         function showLogin() { document.getElementById('loginOverlay').classList.remove('hidden'); }
         function hideLogin() { document.getElementById('loginOverlay').classList.add('hidden'); }
 
-        // ログイン処理
         async function login() {
-            const u = document.getElementById('username').value;
-            const p = document.getElementById('password').value;
+            const id = document.getElementById('username').value;
+            const pw = document.getElementById('password').value;
             const res = await fetch('/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: u, password: p })
+                body: JSON.stringify({ id, password: pw })
             });
             if (res.ok) {
                 const data = await res.json();
                 localStorage.setItem('sb_token', data.token);
                 hideLogin();
-                await loadStatus();
-            } else {
-                document.getElementById('loginMessage').innerText = "IDまたはパスワードが正しくありません";
-            }
+                loadStatus();
+            } else { alert("失敗"); }
         }
 
-        // 領収書アップロードと解析
         async function uploadReceipt() {
             const fileInput = document.getElementById('receiptFile');
-            const status = document.getElementById('uploadStatus');
-            const btn = document.getElementById('uploadBtn');
-
-            if (!fileInput.files[0]) return alert("ファイルを選択してください");
-
-            status.innerText = "Geminiが解析中...";
-            btn.disabled = true;
-
+            if (!fileInput.files[0]) return alert("ファイル選択");
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
-
             try {
-                // main.py の /upload エンドポイントを呼び出す
-                const res = await authFetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await res.json();
-                
-                status.innerText = "解析完了！";
-                alert("解析に成功しました");
-                await loadStatus(); // リストを更新
-            } catch (e) {
-                status.innerText = "エラーが発生しました";
-                console.error(e);
-            } finally {
-                btn.disabled = false;
-            }
+                await authFetch('/upload', { method: 'POST', body: formData });
+                loadStatus();
+            } catch (e) { console.error(e); }
         }
 
-        // データの読み込み
         async function loadStatus() {
             try {
                 const res = await authFetch('/api/status');
                 const data = await res.json();
                 const list = document.getElementById('recordsList');
-                
-                if (data.records.length > 0) {
-                    list.innerHTML = data.records.map(r => `
-                        <div class="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center">
+                list.innerHTML = data.records.reverse().map(r => `
+                    <div class="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center">
+                        <div class="flex gap-4 items-center">
+                            <img src="${r.image_url}" class="w-12 h-12 object-cover rounded-lg">
                             <div>
-                                <p class="text-sm text-slate-400">${r.date}</p>
-                                <p class="font-bold text-slate-800">${r.vendor_name}</p>
+                                <p class="text-xs text-slate-400">${r.date}</p>
+                                <p class="font-bold">${r.vendor_name}</p>
                             </div>
-                            <p class="text-xl font-black text-blue-600">¥${r.total_amount.toLocaleString()}</p>
                         </div>
-                    `).join('');
-                }
+                        <p class="text-xl font-black text-blue-600">¥${r.total_amount.toLocaleString()}</p>
+                    </div>
+                `).join('');
             } catch (e) { console.error(e); }
         }
 
-        function logout() {
-            localStorage.removeItem('sb_token');
-            location.reload();
-        }
+        function logout() { localStorage.removeItem('sb_token'); location.reload(); }
 
         window.onload = () => {
             if (localStorage.getItem('sb_token')) {
                 hideLogin();
                 loadStatus();
-            } else {
-                showLogin();
-            }
+                // 30秒ごとに自動更新（LINE連携の反映をキャッチするため）
+                setInterval(loadStatus, 30000);
+            } else { showLogin(); }
         };
     </script>
 </body>
