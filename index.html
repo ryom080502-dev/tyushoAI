@@ -1,62 +1,140 @@
-<div id="loginOverlay" class="fixed inset-0 bg-slate-900 z-[100] flex items-center justify-center p-6">
-    <div class="bg-white w-full max-w-md p-10 rounded-[2.5rem] shadow-2xl">
-        <h2 class="text-3xl font-black text-slate-800 mb-2">SmartBuilder AI</h2>
-        <p class="text-slate-500 mb-8 font-medium">ログインして開始してください</p>
-        <div class="space-y-4">
-            <input type="text" id="loginId" placeholder="ユーザーID" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
-            <input type="password" id="loginPw" placeholder="パスワード" class="w-full px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
-            <button onclick="handleLogin()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-blue-600 transition-all">ログイン</button>
-        </div>
-    </div>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartBuilder AI - ログイン</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+        }
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 350px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+            color: #1c1e21;
+        }
+        p {
+            color: #606770;
+            margin-bottom: 24px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 16px;
+            border: 1px solid #dddfe2;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #1877f2;
+            box-shadow: 0 0 0 2px #e7f3ff;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #1877f2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #166fe5;
+        }
+        #message {
+            color: #fa3e3e;
+            font-size: 14px;
+            margin-top: 16px;
+            min-height: 1em;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-container">
+    <h1>SmartBuilder AI</h1>
+    <p>ログインして開始してください</p>
+    <input type="text" id="username" placeholder="ユーザー名" required>
+    <input type="password" id="password" placeholder="パスワード" required>
+    <button onclick="login()">ログイン</button>
+    <div id="message"></div>
 </div>
 
 <script>
-    // 認証ヘッダーを付与する共通関数
-    async function authFetch(url, options = {}) {
-        const token = localStorage.getItem('sb_token');
-        if (!options.headers) options.headers = {};
-        options.headers['Authorization'] = `Bearer ${token}`;
-        
-        const res = await fetch(url, options);
-        if (res.status === 401) {
-            document.getElementById('loginOverlay').classList.remove('hidden');
-            throw new Error('Unauthorized');
-        }
-        return res;
-    }
+    async function login() {
+        const usernameInput = document.getElementById('username').value;
+        const passwordInput = document.getElementById('password').value;
+        const messageDiv = document.getElementById('message');
 
-    async function handleLogin() {
-        const id = document.getElementById('loginId').value;
-        const password = document.getElementById('loginPw').value;
-        
-        const res = await fetch('/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, password })
-        });
-        
-        if (res.ok) {
-            const { token } = await res.json();
-            localStorage.setItem('sb_token', token);
-            document.getElementById('loginOverlay').classList.add('hidden');
-            sync();
-        } else {
-            alert("ログインに失敗しました");
-        }
-    }
+        // メッセージをクリア
+        messageDiv.innerText = "";
 
-    // 既存の sync 関数内の fetch を authFetch に差し替える
-    async function sync() {
+        if (!usernameInput || !passwordInput) {
+            messageDiv.innerText = "ユーザー名とパスワードを入力してください。";
+            return;
+        }
+
         try {
-            const res = await authFetch('/api/status');
-            const { records, users } = await res.json();
-            // ...以下、以前の描画処理と同じ...
-            document.getElementById('loginOverlay').classList.add('hidden');
-        } catch (e) { /* 401ならloginOverlayが表示される */ }
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: usernameInput,
+                    password: passwordInput
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // --- トークンの保存と画面遷移 ---
+                
+                // 1. サーバーから返ってきたトークンをブラウザのLocalStorageに保存
+                localStorage.setItem('access_token', data.token);
+                
+                // 2. メインページ（/main）へ移動
+                // ※main.pyで定義しているメイン画面のパスに合わせてください
+                window.location.href = '/main'; 
+                
+            } else {
+                // エラーメッセージの表示
+                messageDiv.innerText = data.detail || "ログインに失敗しました。";
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            messageDiv.innerText = "サーバーとの通信に失敗しました。";
+        }
     }
 
-    // 起動時にトークンがあれば非表示にする
-    if (localStorage.getItem('sb_token')) {
-        document.getElementById('loginOverlay').classList.add('hidden');
-    }
+    // Enterキーでもログインできるように設定
+    document.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            login();
+        }
+    });
 </script>
+
+</body>
+</html>
