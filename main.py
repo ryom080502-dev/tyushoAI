@@ -143,6 +143,46 @@ async def upload_receipt(file: UploadFile = File(...), u_id: str = Depends(get_c
     os.remove(temp_path)
     return {"data": data_list}
 
+@app.delete("/delete/{record_id}")
+async def delete_record(record_id: str, u_id: str = Depends(get_current_user)):
+    """レコードを削除（Firestore + GCS）"""
+    try:
+        # 1. Firestoreからレコード取得
+        doc_ref = db.collection(COL_RECORDS).document(record_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="レコードが見つかりません")
+        
+        record_data = doc.to_dict()
+        
+        # 2. 権限チェック（adminまたは所有者のみ削除可能）
+        if u_id != "admin" and record_data.get("owner") != u_id:
+            raise HTTPException(status_code=403, detail="削除権限がありません")
+        
+        # 3. GCSから画像ファイルを削除
+        image_url = record_data.get("image_url", "")
+        if image_url and BUCKET_NAME in image_url:
+            # URLからファイル名を抽出: https://storage.googleapis.com/BUCKET_NAME/path/to/file.jpg
+            blob_name = image_url.split(f"{BUCKET_NAME}/")[-1]
+            bucket = storage_client.bucket(BUCKET_NAME)
+            blob = bucket.blob(blob_name)
+            
+            # ファイルが存在する場合のみ削除
+            if blob.exists():
+                blob.delete()
+        
+        # 4. Firestoreからドキュメントを削除
+        doc_ref.delete()
+        
+        # 5. ユーザーの使用カウントを減らす
+        db.collection(COL_USERS).document(u_id).update({"used": firestore.Increment(-1)})
+        
+        return {"message": "削除しました", "id": record_id}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"削除に失敗しました: {str(e)}")
+
 @app.post("/webhook")
 async def webhook(request: Request):
     signature = request.headers.get("X-Line-Signature")
@@ -152,6 +192,46 @@ async def webhook(request: Request):
     except InvalidSignatureError:
         raise HTTPException(status_code=400)
     return "OK"
+
+@app.delete("/api/records/{record_id}")
+async def delete_record(record_id: str, u_id: str = Depends(get_current_user)):
+    """レコードを削除（Firestore + GCS）"""
+    try:
+        # 1. Firestoreからレコード取得
+        doc_ref = db.collection(COL_RECORDS).document(record_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="レコードが見つかりません")
+        
+        record_data = doc.to_dict()
+        
+        # 2. GCSから画像削除
+        image_url = record_data.get("image_url", "")
+        if image_url:
+            # URLからファイルパスを抽出（例: https://storage.googleapis.com/bucket/path/file.jpg → path/file.jpg）
+            try:
+                blob_name = image_url.split(f"{BUCKET_NAME}/")[-1]
+                bucket = storage_client.bucket(BUCKET_NAME)
+                blob = bucket.blob(blob_name)
+                if blob.exists():
+                    blob.delete()
+            except Exception as e:
+                print(f"GCS削除エラー: {e}")
+                # GCS削除に失敗してもFirestoreは削除する
+        
+        # 3. Firestoreからレコード削除
+        doc_ref.delete()
+        
+        # 4. ユーザーの使用回数を減らす
+        db.collection(COL_USERS).document(u_id).update({"used": firestore.Increment(-1)})
+        
+        return {"message": "削除しました", "id": record_id}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"削除に失敗しました: {str(e)}")
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):

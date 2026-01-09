@@ -93,6 +93,61 @@
             if (e.key === 'Escape') closeImageModal();
         });
 
+        // ★ 新規追加: レコード削除関数
+        async function deleteRecord(recordId, vendorName) {
+            if (!confirm(`「${vendorName}」のレコードを削除しますか？\n※この操作は取り消せません`)) {
+                return;
+            }
+
+            showLoading();
+            
+            try {
+                const res = await authFetch(`/api/records/${recordId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (res.ok) {
+                    await loadStatus(); // リストを更新
+                    alert('削除しました');
+                } else {
+                    const error = await res.json();
+                    alert(`削除に失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('削除に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // ★ 新規追加: レコード削除機能
+        async function deleteRecord(recordId) {
+            if (!confirm('本当に削除しますか？\n※ 画像ファイルも完全に削除されます')) {
+                return;
+            }
+            
+            showLoading(); // 削除中のローディング表示
+            
+            try {
+                const res = await authFetch(`/delete/${recordId}`, { 
+                    method: 'DELETE' 
+                });
+                
+                if (res.ok) {
+                    await loadStatus(); // リスト更新
+                } else {
+                    const error = await res.json();
+                    alert(`削除失敗: ${error.detail || '不明なエラー'}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('削除に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
         async function authFetch(url, options = {}) {
             const token = localStorage.getItem('sb_token');
             if (!options.headers) options.headers = {};
@@ -160,7 +215,14 @@
                                 <p class="font-bold">${r.vendor_name}</p>
                             </div>
                         </div>
-                        <p class="text-xl font-black text-blue-600">¥${r.total_amount.toLocaleString()}</p>
+                        <div class="flex items-center gap-4">
+                            <p class="text-xl font-black text-blue-600">¥${r.total_amount.toLocaleString()}</p>
+                            <button onclick="deleteRecord('${r.id}', '${r.vendor_name}')" 
+                                    class="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-red-100 transition"
+                                    title="削除">
+                                🗑️
+                            </button>
+                        </div>
                     </div>
                 `).join('');
             } catch (e) { console.error(e); }
