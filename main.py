@@ -233,6 +233,64 @@ async def delete_record(record_id: str, u_id: str = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"削除に失敗しました: {str(e)}")
 
+@app.post("/api/records/bulk-delete")
+async def bulk_delete_records(data: dict, u_id: str = Depends(get_current_user)):
+    """複数レコードを一括削除（Firestore + GCS）"""
+    record_ids = data.get("record_ids", [])
+    
+    if not record_ids:
+        raise HTTPException(status_code=400, detail="削除対象が選択されていません")
+    
+    deleted_count = 0
+    failed_ids = []
+    
+    for record_id in record_ids:
+        try:
+            # 1. Firestoreからレコード取得
+            doc_ref = db.collection(COL_RECORDS).document(record_id)
+            doc = doc_ref.get()
+            
+            if not doc.exists:
+                failed_ids.append(record_id)
+                continue
+            
+            record_data = doc.to_dict()
+            
+            # 2. GCSから画像削除
+            image_url = record_data.get("image_url", "")
+            if image_url:
+                try:
+                    blob_name = image_url.split(f"{BUCKET_NAME}/")[-1]
+                    bucket = storage_client.bucket(BUCKET_NAME)
+                    blob = bucket.blob(blob_name)
+                    if blob.exists():
+                        blob.delete()
+                except Exception as e:
+                    print(f"GCS削除エラー (ID: {record_id}): {e}")
+            
+            # 3. Firestoreからレコード削除
+            doc_ref.delete()
+            deleted_count += 1
+            
+        except Exception as e:
+            print(f"削除エラー (ID: {record_id}): {e}")
+            failed_ids.append(record_id)
+    
+    # 4. ユーザーの使用回数を減らす
+    if deleted_count > 0:
+        db.collection(COL_USERS).document(u_id).update({"used": firestore.Increment(-deleted_count)})
+    
+    result = {
+        "message": f"{deleted_count}件のレコードを削除しました",
+        "deleted_count": deleted_count,
+        "failed_count": len(failed_ids)
+    }
+    
+    if failed_ids:
+        result["failed_ids"] = failed_ids
+    
+    return result
+
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     # 1. LINEから画像取得
