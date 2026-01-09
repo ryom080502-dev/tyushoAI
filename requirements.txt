@@ -13,3 +13,5 @@ python-multipart
 google-cloud-firestore
 google-cloud-storage
 requests
+pdf2image
+Pillow

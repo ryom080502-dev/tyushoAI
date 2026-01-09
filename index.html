@@ -37,15 +37,23 @@
         </div>
     </div>
 
-    <!-- ★ 新規追加: 画像拡大表示モーダル -->
-    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4" onclick="closeImageModal()">
-        <div class="relative max-w-5xl max-h-[90vh] w-full h-full flex items-center justify-center">
+    <!-- ★ 修正: 画像拡大表示モーダル（複数画像スクロール対応） -->
+    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4" onclick="closeImageModal()">
+        <div class="relative w-full h-full max-w-6xl max-h-[95vh] flex flex-col">
             <!-- 閉じるボタン -->
             <button onclick="closeImageModal(); event.stopPropagation();" class="absolute top-4 right-4 bg-white text-slate-900 rounded-full w-12 h-12 flex items-center justify-center font-bold text-2xl shadow-lg hover:bg-slate-100 transition z-10">
                 ×
             </button>
-            <!-- 拡大画像 -->
-            <img id="modalImage" src="" class="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" onclick="event.stopPropagation()">
+            
+            <!-- ページ情報表示（複数画像の場合） -->
+            <div id="pageInfo" class="hidden absolute top-4 left-4 bg-white px-4 py-2 rounded-xl shadow-lg z-10">
+                <span id="currentPage" class="font-bold">1</span> / <span id="totalPages">1</span> ページ
+            </div>
+            
+            <!-- 画像スクロールエリア -->
+            <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col items-center gap-4 py-16" onclick="event.stopPropagation()">
+                <div id="modalImagesContainer"></div>
+            </div>
         </div>
     </div>
 
@@ -119,9 +127,33 @@
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
 
-        // ★ 新規追加: 画像モーダル表示・非表示関数
-        function openImageModal(imageUrl) {
-            document.getElementById('modalImage').src = imageUrl;
+        // ★ 修正: 画像モーダル表示・非表示関数（複数画像対応）
+        function openImageModal(imageUrls) {
+            // 文字列の場合は配列に変換
+            if (typeof imageUrls === 'string') {
+                imageUrls = [imageUrls];
+            }
+            
+            const container = document.getElementById('modalImagesContainer');
+            const pageInfo = document.getElementById('pageInfo');
+            const totalPagesSpan = document.getElementById('totalPages');
+            
+            // 画像を表示
+            container.innerHTML = imageUrls.map((url, index) => `
+                <div class="w-full flex flex-col items-center">
+                    ${imageUrls.length > 1 ? `<div class="bg-white px-3 py-1 rounded-lg mb-2 text-sm font-bold">ページ ${index + 1}</div>` : ''}
+                    <img src="${url}" class="max-w-full rounded-2xl shadow-2xl" onclick="event.stopPropagation()">
+                </div>
+            `).join('');
+            
+            // ページ情報を更新
+            if (imageUrls.length > 1) {
+                totalPagesSpan.textContent = imageUrls.length;
+                pageInfo.classList.remove('hidden');
+            } else {
+                pageInfo.classList.add('hidden');
+            }
+            
             document.getElementById('imageModal').classList.remove('hidden');
         }
 
@@ -383,7 +415,12 @@
                 const res = await authFetch('/api/status');
                 const data = await res.json();
                 const list = document.getElementById('recordsList');
-                list.innerHTML = data.records.reverse().map(r => `
+                list.innerHTML = data.records.reverse().map(r => {
+                    // PDFの場合は画像化されたURLを使用、それ以外は元のURL
+                    const displayUrl = (r.pdf_images && r.pdf_images.length > 0) ? r.pdf_images[0] : r.image_url;
+                    const allImages = (r.pdf_images && r.pdf_images.length > 0) ? r.pdf_images : [r.image_url];
+                    
+                    return `
                     <div class="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center">
                         <div class="flex gap-4 items-center">
                             ${isBulkDeleteMode ? `
@@ -393,10 +430,13 @@
                                        onchange="toggleRecordSelection('${r.id}')"
                                        class="w-5 h-5 cursor-pointer">
                             ` : ''}
-                            <img src="${r.image_url}" 
-                                 class="w-12 h-12 object-cover rounded-lg cursor-pointer hover:opacity-80 transition" 
-                                 onclick="openImageModal('${r.image_url}')"
-                                 title="クリックで拡大表示">
+                            <div class="relative">
+                                <img src="${displayUrl}" 
+                                     class="w-12 h-12 object-cover rounded-lg cursor-pointer hover:opacity-80 transition" 
+                                     onclick='openImageModal(${JSON.stringify(allImages)})'
+                                     title="クリックで拡大表示">
+                                ${r.is_pdf ? '<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1 rounded">PDF</span>' : ''}
+                            </div>
                             <div>
                                 <p class="text-xs text-slate-400">${r.date}</p>
                                 <p class="font-bold">${r.vendor_name}</p>
@@ -413,7 +453,7 @@
                             ` : ''}
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
             } catch (e) { console.error(e); }
         }
 

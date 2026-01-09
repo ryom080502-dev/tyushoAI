@@ -14,6 +14,14 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, ImageMessage, TextSendMessage
 
+# --- PDF処理用インポート ---
+try:
+    from pdf2image import convert_from_path
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    print("警告: pdf2imageがインストールされていません。PDF画像化機能は無効です。")
+
 load_dotenv()
 
 # --- 認証設定 ---
@@ -77,6 +85,39 @@ def download_japanese_font():
 
 # 起動時にフォントをダウンロード
 JAPANESE_FONT_PATH = download_japanese_font()
+
+# --- PDF処理関数 ---
+def convert_pdf_to_images(pdf_path):
+    """PDFを画像に変換し、GCSにアップロード。画像URLのリストを返す"""
+    if not PDF_SUPPORT:
+        print("PDF画像化機能が無効です")
+        return []
+    
+    try:
+        # PDFを画像に変換（全ページ）
+        images = convert_from_path(pdf_path, dpi=150)
+        image_urls = []
+        
+        base_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+        timestamp = int(time.time())
+        
+        for i, image in enumerate(images):
+            # 一時的にJPEGとして保存
+            temp_image_path = os.path.join(UPLOAD_DIR, f"{base_filename}_page{i+1}.jpg")
+            image.save(temp_image_path, "JPEG", quality=85)
+            
+            # GCSにアップロード
+            gcs_file_name = f"pdf_images/{timestamp}_{base_filename}_page{i+1}.jpg"
+            public_url = upload_to_gcs(temp_image_path, gcs_file_name)
+            image_urls.append(public_url)
+            
+            # 一時ファイル削除
+            os.remove(temp_image_path)
+        
+        return image_urls
+    except Exception as e:
+        print(f"PDF画像化エラー: {e}")
+        return []
 
 # --- ユーティリティ関数 ---
 
@@ -149,31 +190,41 @@ async def upload_receipt(file: UploadFile = File(...), u_id: str = Depends(get_c
     temp_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(temp_path, "wb") as b: shutil.copyfileobj(file.file, b)
     
+    # PDFファイルかどうかをチェック
+    is_pdf = file.filename.lower().endswith('.pdf')
+    
     # 2. Cloud Storageへアップロード
     gcs_file_name = f"receipts/{int(time.time())}_{file.filename}"
     public_url = upload_to_gcs(temp_path, gcs_file_name)
     
-    # 3. Gemini 解析
+    # 3. PDFの場合は画像化
+    pdf_image_urls = []
+    if is_pdf and PDF_SUPPORT:
+        pdf_image_urls = convert_pdf_to_images(temp_path)
+    
+    # 4. Gemini 解析
     genai_file = genai.upload_file(path=temp_path)
     while genai_file.state.name == "PROCESSING": time.sleep(1); genai_file = genai.get_file(genai_file.name)
     response = model.generate_content([genai_file, PROMPT])
     
     data_list = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
     
-    # 4. Firestore への保存 (公開URLを保存)
+    # 5. Firestore への保存
     for item in (data_list if isinstance(data_list, list) else [data_list]):
         doc_id = str(int(time.time()*1000))
         item.update({
             "image_url": public_url,
             "id": doc_id,
             "created_at": firestore.SERVER_TIMESTAMP,
-            "owner": u_id
+            "owner": u_id,
+            "is_pdf": is_pdf,
+            "pdf_images": pdf_image_urls if is_pdf else []  # PDF画像URLリスト
         })
         db.collection(COL_RECORDS).document(doc_id).set(item)
     
     db.collection(COL_USERS).document(u_id).update({"used": firestore.Increment(1)})
     
-    # 5. 一時ファイルを削除してサーバーを綺麗に保つ
+    # 6. 一時ファイルを削除してサーバーを綺麗に保つ
     os.remove(temp_path)
     return {"data": data_list}
 
