@@ -200,17 +200,35 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
     for idx, file in enumerate(files):
         print(f"\n--- Processing file {idx + 1}/{len(files)}: {file.filename} ---")
         try:
+            # ★ 追加: ファイル名をサニタイズ（日本語・特殊文字対応）
+            import unicodedata
+            import re
+            
+            # 元のファイル名を保持
+            original_filename = file.filename
+            
+            # 拡張子を取得
+            file_ext = os.path.splitext(original_filename)[1]
+            
+            # 安全なファイル名を生成（タイムスタンプ + 拡張子）
+            safe_filename = f"{int(time.time() * 1000)}{file_ext}"
+            
+            print(f"Original filename: {original_filename}")
+            print(f"Safe filename: {safe_filename}")
+            
             # 1. 一時保存
-            temp_path = os.path.join(UPLOAD_DIR, file.filename)
+            temp_path = os.path.join(UPLOAD_DIR, safe_filename)
             print(f"Saving to: {temp_path}")
-            with open(temp_path, "wb") as b: shutil.copyfileobj(file.file, b)
+            
+            with open(temp_path, "wb") as b: 
+                shutil.copyfileobj(file.file, b)
             
             # PDFファイルかどうかをチェック
-            is_pdf = file.filename.lower().endswith('.pdf')
+            is_pdf = original_filename.lower().endswith('.pdf')
             print(f"Is PDF: {is_pdf}")
             
             # 2. Cloud Storageへアップロード
-            gcs_file_name = f"receipts/{int(time.time())}_{file.filename}"
+            gcs_file_name = f"receipts/{safe_filename}"
             print(f"Uploading to GCS: {gcs_file_name}")
             public_url = upload_to_gcs(temp_path, gcs_file_name)
             print(f"GCS URL: {public_url}")
@@ -244,7 +262,8 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
                     "created_at": firestore.SERVER_TIMESTAMP,
                     "owner": u_id,
                     "is_pdf": is_pdf,
-                    "pdf_images": pdf_image_urls if is_pdf else []
+                    "pdf_images": pdf_image_urls if is_pdf else [],
+                    "original_filename": original_filename  # 元のファイル名を保存
                 })
                 db.collection(COL_RECORDS).document(doc_id).set(item)
             
@@ -254,11 +273,11 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
             os.remove(temp_path)
             
             all_results.append({
-                "filename": file.filename,
+                "filename": original_filename,
                 "status": "success",
-                "data": data_list
+                "data": data_list if isinstance(data_list, (list, dict)) else str(data_list)
             })
-            print(f"✅ Success: {file.filename}")
+            print(f"✅ Success: {original_filename}")
             
         except Exception as e:
             print(f"❌ Error processing {file.filename}: {type(e).__name__}: {str(e)}")
@@ -273,7 +292,22 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
     print(f"\n=== Upload complete ===")
     print(f"Success: {len([r for r in all_results if r['status'] == 'success'])}")
     print(f"Errors: {len([r for r in all_results if r['status'] == 'error'])}")
-    return {"results": all_results}
+    
+    # ★ 追加: レスポンスをJSON安全な形式に変換
+    safe_results = []
+    for result in all_results:
+        safe_result = {
+            "filename": result["filename"],
+            "status": result["status"]
+        }
+        if result["status"] == "success":
+            # dataをJSON安全な形式に変換
+            safe_result["data"] = result.get("data", [])
+        else:
+            safe_result["error"] = result.get("error", "Unknown error")
+        safe_results.append(safe_result)
+    
+    return {"results": safe_results}
 
 @app.delete("/delete/{record_id}")
 async def delete_record(record_id: str, u_id: str = Depends(get_current_user)):
