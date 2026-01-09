@@ -1,5 +1,6 @@
 import os, time, json, shutil, io
 from datetime import datetime, timedelta
+from typing import List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends, status
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -185,14 +186,15 @@ async def get_status(u_id: str = Depends(get_current_user)):
     return {"records": records, "users": users}
 
 @app.post("/upload")
-async def upload_receipt(files: list[UploadFile] = File(default=[]), u_id: str = Depends(get_current_user)):
+async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depends(get_current_user)):
     """複数ファイルのアップロードに対応（個別処理）"""
     if not files or len(files) == 0:
         raise HTTPException(status_code=400, detail="ファイルが選択されていません")
     
     all_results = []
     
-    for file in files:
+    for idx, file in enumerate(files):
+        print(f"Processing file {idx + 1}/{len(files)}: {file.filename}")  # デバッグログ
         try:
             # 1. 一時保存
             temp_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -243,14 +245,17 @@ async def upload_receipt(files: list[UploadFile] = File(default=[]), u_id: str =
                 "status": "success",
                 "data": data_list
             })
+            print(f"✅ Success: {file.filename}")  # デバッグログ
             
         except Exception as e:
+            print(f"❌ Error processing {file.filename}: {str(e)}")  # デバッグログ
             all_results.append({
                 "filename": file.filename,
                 "status": "error",
                 "error": str(e)
             })
     
+    print(f"Upload complete: {len([r for r in all_results if r['status'] == 'success'])} success, {len([r for r in all_results if r['status'] == 'error'])} errors")
     return {"results": all_results}
 
 @app.delete("/delete/{record_id}")

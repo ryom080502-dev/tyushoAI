@@ -399,9 +399,10 @@
             if (selectedFiles.length === 0) return alert("ファイルを選択してください");
             
             const formData = new FormData();
+            // ★ 重要: キー名を 'file' ではなく 'files' にする（バックエンドと一致）
             selectedFiles.forEach(file => formData.append('files', file));
             
-            showLoading(`解析中... (0 / ${selectedFiles.length})`, 'しばらくお待ちください');
+            showLoading(`解析中...`, 'しばらくお待ちください');
             
             try {
                 const res = await authFetch('/upload', { 
@@ -412,16 +413,25 @@
                 if (res.ok) {
                     const result = await res.json();
                     const successCount = result.results.filter(r => r.status === 'success').length;
-                    alert(`${successCount}件のファイルを処理しました`);
+                    const failCount = result.results.filter(r => r.status === 'error').length;
+                    
+                    if (failCount > 0) {
+                        alert(`処理完了\n成功: ${successCount}件\n失敗: ${failCount}件`);
+                    } else {
+                        alert(`${successCount}件のファイルを処理しました`);
+                    }
+                    
                     selectedFiles = [];
                     fileInput.value = '';
                     displaySelectedFiles();
                     await loadStatus();
                 } else {
+                    const errorText = await res.text();
+                    console.error('Upload error:', errorText);
                     alert('アップロードに失敗しました');
                 }
             } catch (e) {
-                console.error(e);
+                console.error('Upload exception:', e);
                 alert('アップロードに失敗しました');
             } finally {
                 hideLoading();
