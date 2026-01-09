@@ -394,7 +394,7 @@
             } else { alert("ログイン失敗"); }
         }
 
-        // ★ 修正: 複数ファイルアップロード対応（デバッグ強化版）
+        // ★ 修正: 複数ファイルアップロード対応（エラーハンドリング修正版）
         async function uploadReceipts() {
             if (selectedFiles.length === 0) return alert("ファイルを選択してください");
             
@@ -413,9 +413,20 @@
                 console.log('Response status:', res.status);
                 console.log('Response ok:', res.ok);
                 
+                // ★ 修正: レスポンスを一度だけ読み取る
+                const contentType = res.headers.get('content-type');
+                let responseData;
+                
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await res.json();
+                } else {
+                    responseData = await res.text();
+                }
+                
+                console.log('Response data:', responseData);
+                
                 if (res.ok) {
-                    const result = await res.json();
-                    console.log('Response data:', result);
+                    const result = responseData;
                     
                     const successCount = result.results.filter(r => r.status === 'success').length;
                     const failCount = result.results.filter(r => r.status === 'error').length;
@@ -434,16 +445,17 @@
                     await loadStatus();
                 } else {
                     // レスポンスが正常でない場合
+                    console.error('Error response:', responseData);
                     let errorMsg = `HTTPエラー: ${res.status}`;
-                    try {
-                        const errorData = await res.json();
-                        console.error('Error response:', errorData);
-                        errorMsg += `\n${errorData.detail || JSON.stringify(errorData)}`;
-                    } catch (e) {
-                        const errorText = await res.text();
-                        console.error('Error text:', errorText);
-                        errorMsg += `\n${errorText}`;
+                    
+                    if (typeof responseData === 'object' && responseData.detail) {
+                        errorMsg += `\n${responseData.detail}`;
+                    } else if (typeof responseData === 'string') {
+                        errorMsg += `\n${responseData}`;
+                    } else {
+                        errorMsg += `\n${JSON.stringify(responseData)}`;
                     }
+                    
                     alert(`アップロードに失敗しました\n\n${errorMsg}`);
                 }
             } catch (e) {

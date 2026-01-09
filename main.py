@@ -188,40 +188,53 @@ async def get_status(u_id: str = Depends(get_current_user)):
 @app.post("/upload")
 async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depends(get_current_user)):
     """複数ファイルのアップロードに対応（個別処理）"""
+    print(f"=== Upload request received ===")
+    print(f"User: {u_id}")
+    print(f"Files count: {len(files) if files else 0}")
+    
     if not files or len(files) == 0:
         raise HTTPException(status_code=400, detail="ファイルが選択されていません")
     
     all_results = []
     
     for idx, file in enumerate(files):
-        print(f"Processing file {idx + 1}/{len(files)}: {file.filename}")  # デバッグログ
+        print(f"\n--- Processing file {idx + 1}/{len(files)}: {file.filename} ---")
         try:
             # 1. 一時保存
             temp_path = os.path.join(UPLOAD_DIR, file.filename)
+            print(f"Saving to: {temp_path}")
             with open(temp_path, "wb") as b: shutil.copyfileobj(file.file, b)
             
             # PDFファイルかどうかをチェック
             is_pdf = file.filename.lower().endswith('.pdf')
+            print(f"Is PDF: {is_pdf}")
             
             # 2. Cloud Storageへアップロード
             gcs_file_name = f"receipts/{int(time.time())}_{file.filename}"
+            print(f"Uploading to GCS: {gcs_file_name}")
             public_url = upload_to_gcs(temp_path, gcs_file_name)
+            print(f"GCS URL: {public_url}")
             
             # 3. PDFの場合は画像化
             pdf_image_urls = []
             if is_pdf and PDF_SUPPORT:
+                print("Converting PDF to images...")
                 pdf_image_urls = convert_pdf_to_images(temp_path)
+                print(f"PDF images created: {len(pdf_image_urls)}")
             
             # 4. Gemini 解析（ファイルごとに個別処理）
+            print("Starting Gemini analysis...")
             genai_file = genai.upload_file(path=temp_path)
             while genai_file.state.name == "PROCESSING": 
                 time.sleep(1)
                 genai_file = genai.get_file(genai_file.name)
             response = model.generate_content([genai_file, PROMPT])
+            print(f"Gemini response received: {response.text[:100]}...")
             
             data_list = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
             
             # 5. Firestore への保存
+            print("Saving to Firestore...")
             for item in (data_list if isinstance(data_list, list) else [data_list]):
                 doc_id = str(int(time.time()*1000))
                 time.sleep(0.001)  # IDの重複を避けるため
@@ -245,17 +258,21 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
                 "status": "success",
                 "data": data_list
             })
-            print(f"✅ Success: {file.filename}")  # デバッグログ
+            print(f"✅ Success: {file.filename}")
             
         except Exception as e:
-            print(f"❌ Error processing {file.filename}: {str(e)}")  # デバッグログ
+            print(f"❌ Error processing {file.filename}: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()  # 詳細なスタックトレースを出力
             all_results.append({
                 "filename": file.filename,
                 "status": "error",
-                "error": str(e)
+                "error": f"{type(e).__name__}: {str(e)}"
             })
     
-    print(f"Upload complete: {len([r for r in all_results if r['status'] == 'success'])} success, {len([r for r in all_results if r['status'] == 'error'])} errors")
+    print(f"\n=== Upload complete ===")
+    print(f"Success: {len([r for r in all_results if r['status'] == 'success'])}")
+    print(f"Errors: {len([r for r in all_results if r['status'] == 'error'])}")
     return {"results": all_results}
 
 @app.delete("/delete/{record_id}")
