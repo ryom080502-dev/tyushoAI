@@ -394,14 +394,14 @@
             } else { alert("ログイン失敗"); }
         }
 
-        // ★ 修正: 複数ファイルアップロード対応
+        // ★ 修正: 複数ファイルアップロード対応（デバッグ強化版）
         async function uploadReceipts() {
             if (selectedFiles.length === 0) return alert("ファイルを選択してください");
             
             const formData = new FormData();
-            // ★ 重要: キー名を 'file' ではなく 'files' にする（バックエンドと一致）
             selectedFiles.forEach(file => formData.append('files', file));
             
+            console.log('Uploading files:', selectedFiles.map(f => f.name));
             showLoading(`解析中...`, 'しばらくお待ちください');
             
             try {
@@ -410,15 +410,22 @@
                     body: formData 
                 });
                 
+                console.log('Response status:', res.status);
+                console.log('Response ok:', res.ok);
+                
                 if (res.ok) {
                     const result = await res.json();
+                    console.log('Response data:', result);
+                    
                     const successCount = result.results.filter(r => r.status === 'success').length;
                     const failCount = result.results.filter(r => r.status === 'error').length;
                     
                     if (failCount > 0) {
-                        alert(`処理完了\n成功: ${successCount}件\n失敗: ${failCount}件`);
+                        const errors = result.results.filter(r => r.status === 'error');
+                        console.error('Failed files:', errors);
+                        alert(`処理完了\n成功: ${successCount}件\n失敗: ${failCount}件\n\n失敗詳細:\n${errors.map(e => `${e.filename}: ${e.error}`).join('\n')}`);
                     } else {
-                        alert(`${successCount}件のファイルを処理しました`);
+                        alert(`✅ ${successCount}件のファイルを処理しました`);
                     }
                     
                     selectedFiles = [];
@@ -426,13 +433,22 @@
                     displaySelectedFiles();
                     await loadStatus();
                 } else {
-                    const errorText = await res.text();
-                    console.error('Upload error:', errorText);
-                    alert('アップロードに失敗しました');
+                    // レスポンスが正常でない場合
+                    let errorMsg = `HTTPエラー: ${res.status}`;
+                    try {
+                        const errorData = await res.json();
+                        console.error('Error response:', errorData);
+                        errorMsg += `\n${errorData.detail || JSON.stringify(errorData)}`;
+                    } catch (e) {
+                        const errorText = await res.text();
+                        console.error('Error text:', errorText);
+                        errorMsg += `\n${errorText}`;
+                    }
+                    alert(`アップロードに失敗しました\n\n${errorMsg}`);
                 }
             } catch (e) {
                 console.error('Upload exception:', e);
-                alert('アップロードに失敗しました');
+                alert(`アップロードに失敗しました\n\nエラー: ${e.message}\n\nブラウザのコンソール（F12）で詳細を確認してください`);
             } finally {
                 hideLoading();
             }
