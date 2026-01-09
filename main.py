@@ -44,6 +44,40 @@ app = FastAPI()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+FONT_DIR = "fonts"
+os.makedirs(FONT_DIR, exist_ok=True)
+
+# --- 日本語フォント管理 ---
+def download_japanese_font():
+    """Noto Sans JPフォントをダウンロード"""
+    font_path = os.path.join(FONT_DIR, "NotoSansJP-Regular.ttf")
+    
+    if os.path.exists(font_path):
+        print("日本語フォントは既にダウンロード済みです")
+        return font_path
+    
+    print("日本語フォントをダウンロード中...")
+    try:
+        import requests
+        # Google Fonts APIから最新のNoto Sans JPを取得
+        url = "https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf"
+        response = requests.get(url, timeout=30)
+        
+        if response.status_code == 200:
+            with open(font_path, "wb") as f:
+                f.write(response.content)
+            print("日本語フォントのダウンロードが完了しました")
+            return font_path
+        else:
+            print(f"フォントダウンロード失敗: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"フォントダウンロードエラー: {e}")
+        return None
+
+# 起動時にフォントをダウンロード
+JAPANESE_FONT_PATH = download_japanese_font()
+
 # --- ユーティリティ関数 ---
 
 def upload_to_gcs(file_path, destination_blob_name):
@@ -415,7 +449,7 @@ async def export_excel(u_id: str = Depends(get_current_user)):
 
 @app.get("/api/export/pdf")
 async def export_pdf(u_id: str = Depends(get_current_user)):
-    """PDFファイルとしてエクスポート"""
+    """PDFファイルとしてエクスポート（日本語対応）"""
     from fpdf import FPDF
     from fastapi.responses import StreamingResponse
     
@@ -430,35 +464,61 @@ async def export_pdf(u_id: str = Depends(get_current_user)):
     pdf = FPDF()
     pdf.add_page()
     
-    # 日本語フォント設定（フォールバック）
-    pdf.set_font("Helvetica", size=12)
+    # 日本語フォント設定
+    if JAPANESE_FONT_PATH and os.path.exists(JAPANESE_FONT_PATH):
+        pdf.add_font("NotoSansJP", "", JAPANESE_FONT_PATH, uni=True)
+        pdf.set_font("NotoSansJP", size=12)
+        font_name = "NotoSansJP"
+    else:
+        # フォールバック（日本語が文字化けする可能性あり）
+        pdf.set_font("Helvetica", size=12)
+        font_name = "Helvetica"
     
     # タイトル
-    pdf.set_font("Helvetica", 'B', 16)
-    pdf.cell(0, 10, 'Receipt Records', ln=True, align='C')
+    pdf.set_font(font_name, size=16)
+    pdf.cell(0, 10, '領収書データ一覧', ln=True, align='C')
     pdf.ln(5)
     
     # ヘッダー
-    pdf.set_font("Helvetica", 'B', 10)
-    pdf.cell(30, 10, 'Date', border=1)
-    pdf.cell(80, 10, 'Vendor', border=1)
-    pdf.cell(40, 10, 'Amount', border=1)
-    pdf.cell(40, 10, 'Owner', border=1)
+    pdf.set_font(font_name, size=10)
+    pdf.set_fill_color(220, 220, 220)  # 背景色（グレー）
+    pdf.cell(30, 10, '日付', border=1, fill=True)
+    pdf.cell(80, 10, '店舗名', border=1, fill=True)
+    pdf.cell(40, 10, '金額', border=1, fill=True)
+    pdf.cell(40, 10, '所有者', border=1, fill=True)
     pdf.ln()
     
     # データ行
-    pdf.set_font("Helvetica", size=9)
-    for record in records:
+    pdf.set_font(font_name, size=9)
+    for i, record in enumerate(records):
         date = record.get('date', '')
-        vendor = record.get('vendor_name', '')[:30]  # 長すぎる場合は切り詰め
+        vendor = record.get('vendor_name', '')
+        # 長すぎる場合は切り詰め
+        if len(vendor) > 25:
+            vendor = vendor[:25] + '...'
         amount = f"¥{record.get('total_amount', 0):,}"
         owner = record.get('owner', '')
         
-        pdf.cell(30, 8, date, border=1)
-        pdf.cell(80, 8, vendor, border=1)
-        pdf.cell(40, 8, amount, border=1)
-        pdf.cell(40, 8, owner, border=1)
+        # 交互に背景色を変更（見やすくするため）
+        if i % 2 == 0:
+            pdf.set_fill_color(245, 245, 245)
+            fill = True
+        else:
+            fill = False
+        
+        pdf.cell(30, 8, date, border=1, fill=fill)
+        pdf.cell(80, 8, vendor, border=1, fill=fill)
+        pdf.cell(40, 8, amount, border=1, fill=fill)
+        pdf.cell(40, 8, owner, border=1, fill=fill)
         pdf.ln()
+    
+    # 合計金額を計算して追加
+    total = sum(record.get('total_amount', 0) for record in records)
+    pdf.ln(5)
+    pdf.set_font(font_name, size=10)
+    pdf.cell(110, 10, '合計金額:', align='R')
+    pdf.set_font(font_name, size=12)
+    pdf.cell(40, 10, f"¥{total:,}", align='R')
     
     # PDFをバイナリとして出力
     pdf_buffer = io.BytesIO(pdf.output())

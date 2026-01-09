@@ -12,3 +12,4 @@ line-bot-sdk
 python-multipart
 google-cloud-firestore
 google-cloud-storage
+requests
