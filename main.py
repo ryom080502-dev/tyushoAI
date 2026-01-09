@@ -185,8 +185,11 @@ async def get_status(u_id: str = Depends(get_current_user)):
     return {"records": records, "users": users}
 
 @app.post("/upload")
-async def upload_receipt(files: list[UploadFile] = File(...), u_id: str = Depends(get_current_user)):
+async def upload_receipt(files: list[UploadFile] = File(default=[]), u_id: str = Depends(get_current_user)):
     """複数ファイルのアップロードに対応（個別処理）"""
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="ファイルが選択されていません")
+    
     all_results = []
     
     for file in files:
