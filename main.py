@@ -197,6 +197,17 @@ async def get_current_user(request: Request):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+async def get_current_user_optional(request: Request):
+    """オプショナルな認証（トークンがない場合はNoneを返す）"""
+    token = request.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        return None
+    try:
+        payload = jwt.decode(token.split(" ")[1], SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except JWTError:
+        return None
+
 def require_admin(u_id: str = Depends(get_current_user)):
     """管理者権限チェック"""
     user_doc = db.collection(COL_USERS).document(u_id).get()
@@ -725,9 +736,20 @@ async def bulk_delete_records(data: dict, u_id: str = Depends(get_current_user))
 # ===== エクスポートエンドポイント =====
 
 @app.get("/api/export/csv")
-async def export_csv(u_id: str = Depends(get_current_user)):
+async def export_csv(token: Optional[str] = None, u_id: Optional[str] = Depends(get_current_user_optional)):
     """CSV出力（サブコレクション対応）"""
     import pandas as pd
+    
+    # トークンパラメータがある場合はそれを使用
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            u_id = payload.get("sub")
+        except JWTError:
+            raise HTTPException(status_code=401, detail="無効なトークンです")
+    
+    if not u_id:
+        raise HTTPException(status_code=401, detail="認証が必要です")
     
     # サブコレクションからレコードを取得
     records_ref = db.collection(COL_USERS).document(u_id).collection("records").stream()
@@ -743,9 +765,20 @@ async def export_csv(u_id: str = Depends(get_current_user)):
     return FileResponse(csv_path, media_type="text/csv", filename=f"receipts_{u_id}.csv")
 
 @app.get("/api/export/excel")
-async def export_excel(u_id: str = Depends(get_current_user)):
+async def export_excel(token: Optional[str] = None, u_id: Optional[str] = Depends(get_current_user_optional)):
     """Excel出力（サブコレクション対応）"""
     import pandas as pd
+    
+    # トークンパラメータがある場合はそれを使用
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            u_id = payload.get("sub")
+        except JWTError:
+            raise HTTPException(status_code=401, detail="無効なトークンです")
+    
+    if not u_id:
+        raise HTTPException(status_code=401, detail="認証が必要です")
     
     # サブコレクションからレコードを取得
     records_ref = db.collection(COL_USERS).document(u_id).collection("records").stream()
@@ -775,9 +808,20 @@ async def export_excel(u_id: str = Depends(get_current_user)):
     return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"receipts_{u_id}.xlsx")
 
 @app.get("/api/export/pdf")
-async def export_pdf(u_id: str = Depends(get_current_user)):
+async def export_pdf(token: Optional[str] = None, u_id: Optional[str] = Depends(get_current_user_optional)):
     """PDF出力（サブコレクション対応）"""
     from fpdf import FPDF
+    
+    # トークンパラメータがある場合はそれを使用
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            u_id = payload.get("sub")
+        except JWTError:
+            raise HTTPException(status_code=401, detail="無効なトークンです")
+    
+    if not u_id:
+        raise HTTPException(status_code=401, detail="認証が必要です")
     
     # サブコレクションからレコードを取得
     records_ref = db.collection(COL_USERS).document(u_id).collection("records").stream()

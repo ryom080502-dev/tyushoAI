@@ -227,6 +227,12 @@
             <div id="bulkDeleteActions" class="hidden mb-6 p-4 bg-red-50 rounded-xl flex justify-between items-center">
                 <p class="font-bold text-red-600"><span id="selectedCount">0</span>件選択中</p>
                 <div class="flex gap-2">
+                    <button onclick="selectAll()" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition">
+                        全て選択
+                    </button>
+                    <button onclick="deselectAll()" class="bg-slate-400 text-white px-6 py-2 rounded-xl font-bold hover:bg-slate-500 transition">
+                        選択解除
+                    </button>
                     <button onclick="bulkDelete()" class="bg-red-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-red-700 transition">
                         選択したレコードを削除
                     </button>
@@ -938,6 +944,26 @@
                 selectedRecords.add(recordId);
             }
             document.getElementById('selectedCount').textContent = selectedRecords.size;
+        }
+
+        // 全て選択
+        function selectAll() {
+            allRecords.forEach(record => {
+                selectedRecords.add(record.id);
+                const checkbox = document.getElementById(`check-${record.id}`);
+                if (checkbox) checkbox.checked = true;
+            });
+            document.getElementById('selectedCount').textContent = selectedRecords.size;
+        }
+
+        // 選択解除
+        function deselectAll() {
+            selectedRecords.clear();
+            allRecords.forEach(record => {
+                const checkbox = document.getElementById(`check-${record.id}`);
+                if (checkbox) checkbox.checked = false;
+            });
+            document.getElementById('selectedCount').textContent = 0;
         }
 
         async function bulkDelete() {
