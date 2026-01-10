@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartBuilder AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hidden { display: none !important; }
+        
+        /* ローディングスピナーのアニメーション */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        
+        /* ドラッグ&ドロップエリアのスタイル */
+        .drop-zone {
+            border: 3px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <!-- ログインオーバーレイ -->
+    <div id="loginOverlay" class="fixed inset-0 bg-slate-900 z-[100] flex items-center justify-center p-6">
+        <div class="bg-white w-full max-w-md p-10 rounded-[2.5rem] shadow-2xl">
+            <h2 class="text-3xl font-black mb-6">SmartBuilder AI</h2>
+            <input type="text" id="username" placeholder="ユーザーID" class="w-full p-4 mb-4 bg-slate-50 border rounded-2xl">
+            <input type="password" id="password" placeholder="パスワード" class="w-full p-4 mb-6 bg-slate-50 border rounded-2xl">
+            <button onclick="login()" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl">ログイン</button>
+        </div>
+    </div>
+
+    <!-- ローディングオーバーレイ -->
+    <div id="loadingOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl text-center max-w-sm">
+            <!-- スピナー -->
+            <div class="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+            <!-- メッセージ -->
+            <p class="text-xl font-bold text-slate-900 mb-2" id="loadingMessage">AI解析中...</p>
+            <p class="text-sm text-slate-500" id="loadingSubtext">しばらくお待ちください</p>
+        </div>
+    </div>
+
+    <!-- ★ 修正: 画像拡大表示モーダル -->
+    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
+        <div class="relative w-full h-full max-w-6xl max-h-[95vh] flex flex-col">
+            <!-- 閉じるボタン -->
+            <button id="closeModalBtn" class="absolute top-4 right-4 bg-white text-slate-900 rounded-full w-12 h-12 flex items-center justify-center font-bold text-2xl shadow-lg hover:bg-slate-100 transition z-20">
+                ×
+            </button>
+            
+            <!-- ページ情報表示（複数画像の場合） -->
+            <div id="pageInfo" class="hidden absolute top-4 left-4 bg-white px-4 py-2 rounded-xl shadow-lg z-20">
+                <span id="currentPage" class="font-bold">1</span> / <span id="totalPages">1</span> ページ
+            </div>
+            
+            <!-- 画像スクロールエリア -->
+            <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col items-center gap-4 py-16">
+                <div id="modalImagesContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★ 新規: 編集モーダル -->
+    <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] shadow-2xl max-w-md w-full p-8" onclick="event.stopPropagation()">
+            <h2 class="text-2xl font-bold mb-6">レコード編集</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">日付</label>
+                    <input type="date" id="editDate" class="w-full p-3 bg-slate-50 border rounded-xl">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">店舗名</label>
+                    <input type="text" id="editVendor" class="w-full p-3 bg-slate-50 border rounded-xl" placeholder="店舗名を入力">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">金額（円）</label>
+                    <input type="number" id="editAmount" class="w-full p-3 bg-slate-50 border rounded-xl" placeholder="金額を入力">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">カテゴリ</label>
+                    <select id="editCategory" class="w-full p-3 bg-slate-50 border rounded-xl">
+                        <option value="食費">🍽️ 食費</option>
+                        <option value="交通費">🚃 交通費</option>
+                        <option value="事務用品">🏢 事務用品</option>
+                        <option value="光熱費">💡 光熱費</option>
+                        <option value="通信費">📱 通信費</option>
+                        <option value="医療費">🏥 医療費</option>
+                        <option value="交際費">🎉 交際費</option>
+                        <option value="その他">📦 その他</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex gap-3 mt-8">
+                <button onclick="saveEdit()" class="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">
+                    保存
+                </button>
+                <button onclick="closeEditModal()" class="flex-1 bg-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-300 transition">
+                    キャンセル
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="mainContent" class="max-w-4xl mx-auto p-8">
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-black">領収書ダッシュボード</h1>
+            <div class="flex gap-4">
+                <button onclick="toggleBulkDeleteMode()" id="bulkDeleteToggle" class="bg-white border px-4 py-2 rounded-xl text-sm font-bold">一括削除</button>
+                <button onclick="loadStatus()" class="bg-white border px-4 py-2 rounded-xl text-sm font-bold">更新</button>
+                <button onclick="logout()" class="text-red-500 font-bold">ログアウト</button>
+            </div>
+        </header>
+
+        <!-- ★ 新規: 検索・フィルターエリア -->
+        <div class="bg-white p-6 rounded-[2rem] shadow-sm mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <!-- 店舗名検索 -->
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">🔍 店舗名検索</label>
+                    <input type="text" id="searchVendor" placeholder="店舗名を入力" 
+                           class="w-full p-3 bg-slate-50 border rounded-xl"
+                           oninput="applyFilters()">
+                </div>
+                
+                <!-- 開始日 -->
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">📅 開始日</label>
+                    <input type="date" id="filterStartDate" 
+                           class="w-full p-3 bg-slate-50 border rounded-xl"
+                           onchange="applyFilters()">
+                </div>
+                
+                <!-- 終了日 -->
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">📅 終了日</label>
+                    <input type="date" id="filterEndDate" 
+                           class="w-full p-3 bg-slate-50 border rounded-xl"
+                           onchange="applyFilters()">
+                </div>
+                
+                <!-- カテゴリフィルター -->
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">🏷️ カテゴリ</label>
+                    <select id="filterCategory" 
+                            class="w-full p-3 bg-slate-50 border rounded-xl"
+                            onchange="applyFilters()">
+                        <option value="">すべて</option>
+                        <option value="食費">🍽️ 食費</option>
+                        <option value="交通費">🚃 交通費</option>
+                        <option value="事務用品">🏢 事務用品</option>
+                        <option value="光熱費">💡 光熱費</option>
+                        <option value="通信費">📱 通信費</option>
+                        <option value="医療費">🏥 医療費</option>
+                        <option value="交際費">🎉 交際費</option>
+                        <option value="その他">📦 その他</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- フィルタークリアボタン -->
+            <div class="mt-4 flex justify-end">
+                <button onclick="clearFilters()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-300 transition">
+                    フィルターをクリア
+                </button>
+            </div>
+        </div>
+
+        <!-- ★ 修正: ドラッグ&ドロップ対応のファイルアップロードエリア -->
+        <div class="bg-white p-8 rounded-[2rem] shadow-sm mb-10">
+            <div id="dropZone" class="drop-zone bg-slate-50 rounded-2xl p-12 text-center cursor-pointer mb-4">
+                <div class="text-6xl mb-4">📁</div>
+                <p class="text-xl font-bold text-slate-700 mb-2">ファイルをドロップ</p>
+                <p class="text-sm text-slate-500 mb-4">またはクリックして選択</p>
+                <p class="text-xs text-slate-400">対応形式: 画像（JPG, PNG）、PDF</p>
+                <input type="file" id="receiptFile" multiple accept="image/*,.pdf" class="hidden">
+            </div>
+            <div id="fileListDisplay" class="mb-4"></div>
+            <button onclick="uploadReceipts()" id="uploadBtn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold w-full">解析実行</button>
+        </div>
+
+        <!-- エクスポートボタンエリア -->
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-[2rem] shadow-sm mb-6 border border-blue-100">
+            <div class="flex justify-between items-center">
+                <div>
+                    <p class="font-bold text-slate-900">📥 データエクスポート</p>
+                    <p class="text-sm text-slate-600 mt-1">全データを各種形式でダウンロード</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="exportData('csv')" class="bg-white border border-slate-300 px-5 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition">
+                        CSV
+                    </button>
+                    <button onclick="exportData('excel')" class="bg-white border border-slate-300 px-5 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition">
+                        Excel
+                    </button>
+                    <button onclick="exportData('pdf')" class="bg-white border border-slate-300 px-5 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition">
+                        PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 一括削除実行ボタン（初期は非表示） -->
+        <div id="bulkDeleteActions" class="hidden bg-red-50 border-2 border-red-200 p-6 rounded-[2rem] shadow-sm mb-6">
+            <div class="flex justify-between items-center">
+                <div>
+                    <p class="font-bold text-red-600">一括削除モード</p>
+                    <p class="text-sm text-slate-600 mt-1">削除したい項目を選択してください</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="selectAllRecords()" class="bg-white border border-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50">全選択</button>
+                    <button onclick="executeBulkDelete()" class="bg-red-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-red-700">選択項目を削除</button>
+                    <button onclick="toggleBulkDeleteMode()" class="bg-slate-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-slate-700">キャンセル</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="recordsList" class="grid gap-4"></div>
+    </div>
+
+    <script>
+        // 一括削除モードの状態管理
+        let isBulkDeleteMode = false;
+        let selectedRecords = new Set();
+        let selectedFiles = [];
+        let editingRecordId = null; // 編集中のレコードID
+        let allRecords = []; // 全レコードを保持
+
+        // カテゴリアイコンのマッピング
+        const categoryIcons = {
+            '食費': '🍽️',
+            '交通費': '🚃',
+            '事務用品': '🏢',
+            '光熱費': '💡',
+            '通信費': '📱',
+            '医療費': '🏥',
+            '交際費': '🎉',
+            'その他': '📦'
+        };
+
+        // ローディング表示・非表示関数
+        function showLoading(message = 'AI解析中...', subtext = 'しばらくお待ちください') {
+            document.getElementById('loadingMessage').textContent = message;
+            document.getElementById('loadingSubtext').textContent = subtext;
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        // ★ 修正: 画像モーダル表示・非表示関数（複数画像対応）
+        function openImageModal(imageUrls) {
+            // 文字列の場合は配列に変換
+            if (typeof imageUrls === 'string') {
+                imageUrls = [imageUrls];
+            }
+            
+            const container = document.getElementById('modalImagesContainer');
+            const pageInfo = document.getElementById('pageInfo');
+            const totalPagesSpan = document.getElementById('totalPages');
+            
+            // 画像を表示
+            container.innerHTML = imageUrls.map((url, index) => `
+                <div class="w-full flex flex-col items-center">
+                    ${imageUrls.length > 1 ? `<div class="bg-white px-3 py-1 rounded-lg mb-2 text-sm font-bold">ページ ${index + 1}</div>` : ''}
+                    <img src="${url}" class="max-w-full rounded-2xl shadow-2xl">
+                </div>
+            `).join('');
+            
+            // ページ情報を更新
+            if (imageUrls.length > 1) {
+                totalPagesSpan.textContent = imageUrls.length;
+                pageInfo.classList.remove('hidden');
+            } else {
+                pageInfo.classList.add('hidden');
+            }
+            
+            document.getElementById('imageModal').classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('imageModal').classList.add('hidden');
+        }
+
+        // モーダルのイベントリスナーを設定
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('imageModal');
+            const closeBtn = document.getElementById('closeModalBtn');
+            
+            // 閉じるボタンのクリック
+            closeBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                closeImageModal();
+            });
+            
+            // モーダル背景のクリック検出
+            modal.addEventListener('click', function(e) {
+                // クリックされた要素を取得
+                const clickedElement = e.target;
+                
+                // 画像、閉じるボタン、ページ情報以外がクリックされた場合は閉じる
+                const isImage = clickedElement.tagName === 'IMG';
+                const isCloseButton = clickedElement.id === 'closeModalBtn' || clickedElement.closest('#closeModalBtn');
+                const isPageInfo = clickedElement.closest('#pageInfo');
+                
+                // 画像、ボタン、ページ情報以外をクリックした場合は閉じる
+                if (!isImage && !isCloseButton && !isPageInfo) {
+                    closeImageModal();
+                }
+            });
+        });
+
+        // ESCキーでモーダルを閉じる
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeImageModal();
+                closeEditModal();
+            }
+        });
+
+        // ★ 新規: 編集モーダルの開閉
+        function openEditModal(record) {
+            editingRecordId = record.id;
+            
+            // フィールドに現在の値をセット
+            document.getElementById('editDate').value = record.date || '';
+            document.getElementById('editVendor').value = record.vendor_name || '';
+            document.getElementById('editAmount').value = record.total_amount || '';
+            document.getElementById('editCategory').value = record.category || 'その他';
+            
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            editingRecordId = null;
+            document.getElementById('editModal').classList.add('hidden');
+        }
+
+        async function saveEdit() {
+            if (!editingRecordId) return;
+            
+            const date = document.getElementById('editDate').value;
+            const vendor = document.getElementById('editVendor').value;
+            const amount = document.getElementById('editAmount').value;
+            const category = document.getElementById('editCategory').value;
+            
+            // バリデーション
+            if (!date || !vendor || !amount) {
+                alert('日付、店舗名、金額は必須項目です');
+                return;
+            }
+            
+            showLoading('更新中...', '');
+            
+            try {
+                const res = await authFetch(`/api/records/${editingRecordId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: date,
+                        vendor_name: vendor,
+                        total_amount: parseInt(amount),
+                        category: category
+                    })
+                });
+                
+                if (res.ok) {
+                    alert('更新しました');
+                    closeEditModal();
+                    await loadStatus();
+                } else {
+                    const error = await res.json();
+                    alert(`更新に失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('更新に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // ★ 新規: ドラッグ&ドロップ機能
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('receiptFile');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            handleFileSelection(files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            handleFileSelection(files);
+        });
+
+        function handleFileSelection(files) {
+            selectedFiles = files;
+            displaySelectedFiles();
+        }
+
+        function displaySelectedFiles() {
+            const display = document.getElementById('fileListDisplay');
+            if (selectedFiles.length === 0) {
+                display.innerHTML = '';
+                return;
+            }
+            
+            display.innerHTML = `
+                <div class="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    <p class="font-bold text-sm text-blue-900 mb-2">選択されたファイル (${selectedFiles.length}件)</p>
+                    <ul class="text-sm text-slate-700 space-y-1">
+                        ${selectedFiles.map(f => `<li>📄 ${f.name}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // 一括削除モード切替
+        function toggleBulkDeleteMode() {
+            isBulkDeleteMode = !isBulkDeleteMode;
+            selectedRecords.clear();
+            
+            const toggleBtn = document.getElementById('bulkDeleteToggle');
+            const actionsDiv = document.getElementById('bulkDeleteActions');
+            
+            if (isBulkDeleteMode) {
+                toggleBtn.classList.add('bg-red-600', 'text-white');
+                toggleBtn.classList.remove('bg-white');
+                toggleBtn.textContent = '一括削除中';
+                actionsDiv.classList.remove('hidden');
+            } else {
+                toggleBtn.classList.remove('bg-red-600', 'text-white');
+                toggleBtn.classList.add('bg-white');
+                toggleBtn.textContent = '一括削除';
+                actionsDiv.classList.add('hidden');
+            }
+            
+            loadStatus();
+        }
+
+        function toggleRecordSelection(recordId) {
+            if (selectedRecords.has(recordId)) {
+                selectedRecords.delete(recordId);
+            } else {
+                selectedRecords.add(recordId);
+            }
+            updateCheckbox(recordId);
+        }
+
+        function updateCheckbox(recordId) {
+            const checkbox = document.getElementById(`check-${recordId}`);
+            if (checkbox) {
+                checkbox.checked = selectedRecords.has(recordId);
+            }
+        }
+
+        function selectAllRecords() {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"][id^="check-"]');
+            const allSelected = selectedRecords.size === checkboxes.length;
+            
+            if (allSelected) {
+                selectedRecords.clear();
+            } else {
+                checkboxes.forEach(cb => {
+                    const recordId = cb.id.replace('check-', '');
+                    selectedRecords.add(recordId);
+                });
+            }
+            
+            checkboxes.forEach(cb => cb.checked = !allSelected);
+        }
+
+        async function executeBulkDelete() {
+            if (selectedRecords.size === 0) {
+                alert('削除する項目を選択してください');
+                return;
+            }
+
+            if (!confirm(`${selectedRecords.size}件のレコードを削除しますか？\n※この操作は取り消せません`)) {
+                return;
+            }
+
+            showLoading('削除中...', '');
+
+            try {
+                const res = await authFetch('/api/records/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ record_ids: Array.from(selectedRecords) })
+                });
+
+                if (res.ok) {
+                    const result = await res.json();
+                    alert(result.message);
+                    selectedRecords.clear();
+                    toggleBulkDeleteMode();
+                    await loadStatus();
+                } else {
+                    const error = await res.json();
+                    alert(`削除に失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('削除に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function exportData(format) {
+            showLoading('エクスポート中...', '');
+            
+            try {
+                const res = await authFetch(`/api/export/${format}`);
+                
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    
+                    const contentDisposition = res.headers.get('Content-Disposition');
+                    let filename = `receipts_${new Date().toISOString().split('T')[0]}.${format}`;
+                    if (contentDisposition) {
+                        const filenameMatch = contentDisposition.match(/filename=(.+)/);
+                        if (filenameMatch) {
+                            filename = filenameMatch[1].replace(/['"]/g, '');
+                        }
+                    }
+                    
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    const error = await res.json();
+                    alert(`エクスポートに失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('エクスポートに失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function authFetch(url, options = {}) {
+            const token = localStorage.getItem('sb_token');
+            if (!options.headers) options.headers = {};
+            if (token) options.headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(url, options);
+            if (res.status === 401) { showLogin(); throw new Error('Unauthorized'); }
+            return res;
+        }
+
+        function showLogin() { document.getElementById('loginOverlay').classList.remove('hidden'); }
+        function hideLogin() { document.getElementById('loginOverlay').classList.add('hidden'); }
+
+        async function login() {
+            const id = document.getElementById('username').value;
+            const pw = document.getElementById('password').value;
+            const res = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, password: pw })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('sb_token', data.token);
+                hideLogin();
+                loadStatus();
+            } else { alert("ログイン失敗"); }
+        }
+
+        // ★ 修正: 複数ファイルアップロード対応（エラーハンドリング修正版）
+        async function uploadReceipts() {
+            if (selectedFiles.length === 0) return alert("ファイルを選択してください");
+            
+            const formData = new FormData();
+            selectedFiles.forEach(file => formData.append('files', file));
+            
+            console.log('Uploading files:', selectedFiles.map(f => f.name));
+            showLoading(`解析中...`, 'しばらくお待ちください');
+            
+            try {
+                const res = await authFetch('/upload', { 
+                    method: 'POST', 
+                    body: formData 
+                });
+                
+                console.log('Response status:', res.status);
+                console.log('Response ok:', res.ok);
+                
+                // ★ 修正: レスポンスを一度だけ読み取る
+                const contentType = res.headers.get('content-type');
+                let responseData;
+                
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await res.json();
+                } else {
+                    responseData = await res.text();
+                }
+                
+                console.log('Response data:', responseData);
+                
+                if (res.ok) {
+                    const result = responseData;
+                    console.log('Upload result:', result);
+                    
+                    // summaryがある場合はそれを使用
+                    const successCount = result.summary ? result.summary.success : result.results.filter(r => r.status === 'success').length;
+                    const failCount = result.summary ? result.summary.errors : result.results.filter(r => r.status === 'error').length;
+                    
+                    if (failCount > 0) {
+                        const errors = result.results.filter(r => r.status === 'error');
+                        console.error('Failed files:', errors);
+                        alert(`処理完了\n成功: ${successCount}件\n失敗: ${failCount}件\n\n失敗詳細:\n${errors.map(e => `${e.filename}: ${e.error}`).join('\n')}`);
+                    } else {
+                        alert(`✅ ${successCount}件のファイルを処理しました`);
+                    }
+                    
+                    selectedFiles = [];
+                    fileInput.value = '';
+                    displaySelectedFiles();
+                    await loadStatus();
+                } else {
+                    // レスポンスが正常でない場合
+                    console.error('Error response:', responseData);
+                    let errorMsg = `HTTPエラー: ${res.status}`;
+                    
+                    if (typeof responseData === 'object' && responseData.detail) {
+                        errorMsg += `\n${responseData.detail}`;
+                    } else if (typeof responseData === 'string') {
+                        errorMsg += `\n${responseData}`;
+                    } else {
+                        errorMsg += `\n${JSON.stringify(responseData)}`;
+                    }
+                    
+                    alert(`アップロードに失敗しました\n\n${errorMsg}`);
+                }
+            } catch (e) {
+                console.error('Upload exception:', e);
+                alert(`アップロードに失敗しました\n\nエラー: ${e.message}\n\nブラウザのコンソール（F12）で詳細を確認してください`);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function deleteRecord(recordId, vendorName) {
+            if (!confirm(`「${vendorName}」のレコードを削除しますか？\n※この操作は取り消せません`)) {
+                return;
+            }
+
+            showLoading('削除中...', '');
+            
+            try {
+                const res = await authFetch(`/api/records/${recordId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (res.ok) {
+                    await loadStatus();
+                    alert('削除しました');
+                } else {
+                    const error = await res.json();
+                    alert(`削除に失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('削除に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // ★ 新規: フィルター機能
+        function applyFilters() {
+            const searchVendor = document.getElementById('searchVendor').value.toLowerCase();
+            const startDate = document.getElementById('filterStartDate').value;
+            const endDate = document.getElementById('filterEndDate').value;
+            const category = document.getElementById('filterCategory').value;
+            
+            let filtered = allRecords.filter(r => {
+                // 店舗名フィルター
+                if (searchVendor && !r.vendor_name.toLowerCase().includes(searchVendor)) {
+                    return false;
+                }
+                
+                // 日付フィルター（開始日）
+                if (startDate && r.date < startDate) {
+                    return false;
+                }
+                
+                // 日付フィルター（終了日）
+                if (endDate && r.date > endDate) {
+                    return false;
+                }
+                
+                // カテゴリフィルター
+                if (category && r.category !== category) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            renderRecords(filtered);
+        }
+
+        function clearFilters() {
+            document.getElementById('searchVendor').value = '';
+            document.getElementById('filterStartDate').value = '';
+            document.getElementById('filterEndDate').value = '';
+            document.getElementById('filterCategory').value = '';
+            renderRecords(allRecords);
+        }
+
+        function renderRecords(records) {
+            const list = document.getElementById('recordsList');
+            list.innerHTML = records.map(r => {
+                const displayUrl = (r.pdf_images && r.pdf_images.length > 0) ? r.pdf_images[0] : r.image_url;
+                const allImages = (r.pdf_images && r.pdf_images.length > 0) ? r.pdf_images : [r.image_url];
+                const categoryIcon = categoryIcons[r.category] || '📦';
+                
+                return `
+                <div class="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center">
+                    <div class="flex gap-4 items-center">
+                        ${isBulkDeleteMode ? `
+                            <input type="checkbox" 
+                                   id="check-${r.id}" 
+                                   ${selectedRecords.has(r.id) ? 'checked' : ''}
+                                   onchange="toggleRecordSelection('${r.id}')"
+                                   class="w-5 h-5 cursor-pointer">
+                        ` : ''}
+                        <div class="relative">
+                            <img src="${displayUrl}" 
+                                 class="w-12 h-12 object-cover rounded-lg cursor-pointer hover:opacity-80 transition" 
+                                 onclick='openImageModal(${JSON.stringify(allImages)})'
+                                 title="クリックで拡大表示">
+                            ${r.is_pdf ? '<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1 rounded">PDF</span>' : ''}
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400">${r.date}</p>
+                            <p class="font-bold">${r.vendor_name}</p>
+                            <p class="text-xs text-slate-500">${categoryIcon} ${r.category || 'その他'}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <p class="text-xl font-black text-blue-600">¥${r.total_amount.toLocaleString()}</p>
+                        ${!isBulkDeleteMode ? `
+                            <button onclick='openEditModal(${JSON.stringify(r)})' 
+                                    class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-100 transition"
+                                    title="編集">
+                                ✏️
+                            </button>
+                            <button onclick="deleteRecord('${r.id}', '${r.vendor_name}')" 
+                                    class="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-red-100 transition"
+                                    title="削除">
+                                🗑️
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        async function loadStatus() {
+            try {
+                const res = await authFetch('/api/status');
+                const data = await res.json();
+                allRecords = data.records.reverse();
+                applyFilters(); // フィルターを適用してレンダリング
+            } catch (e) { console.error(e); }
+        }
+
+        function logout() { localStorage.removeItem('sb_token'); location.reload(); }
+
+        window.onload = () => {
+            if (localStorage.getItem('sb_token')) {
+                hideLogin();
+                loadStatus();
+                setInterval(loadStatus, 30000);
+            } else { showLogin(); }
+        };
+    </script>
+</body>
+</html>

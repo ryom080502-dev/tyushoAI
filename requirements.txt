@@ -4,7 +4,7 @@ google-generativeai
 python-dotenv
 python-jose[cryptography]
 passlib[bcrypt]
-bcrypt==3.1.7
+bcrypt
 pandas
 openpyxl
 fpdf2

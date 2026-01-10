@@ -9,13 +9,15 @@ dist/
 build/
 *.egg-info/
 
-# --- 環境設定・セキュリティ (最重要) ---
+# --- 環境設定・セキュリティ（最重要） ---
 .env
 .flaskenv
 .vscode/
 .idea/
+# Google サービスアカウントキー (JSONファイル) を除外
+gen-lang-client-*.json
 
-# --- アプリケーションデータ (永続化ファイル) ---
+# --- アプリケーションデータ（永続化ファイル） ---
 # これらはGitHubに上げず、サーバー上の各インスタンスで管理します
 records.json
 users.json
