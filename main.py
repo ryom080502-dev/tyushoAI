@@ -1107,14 +1107,14 @@ def handle_image_message(event):
         print("📥 Downloading image...")
         # 画像をダウンロード
         message_content = line_bot_api.get_message_content(event.message.id)
-        image_data = message_content.content
         
         # 一時保存
         temp_path = os.path.join(UPLOAD_DIR, f"line_{int(time.time())}.jpg")
         print(f"Saving to: {temp_path}")
+        
+        # image_contentは既にバイナリデータ
         with open(temp_path, "wb") as f:
-            for chunk in image_data:
-                f.write(chunk)
+            f.write(message_content.content)
         
         print("☁️ Uploading to GCS...")
         # GCSにアップロード
