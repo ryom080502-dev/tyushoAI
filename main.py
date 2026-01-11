@@ -29,7 +29,8 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-123")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+# pbkdf2_sha256を優先、bcryptも下位互換性のためサポート
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
 
 # Gemini 設定
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -106,6 +107,25 @@ STRIPE_ENABLED = False
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 
 app = FastAPI()
+
+# CORS設定
+from fastapi.middleware.cors import CORSMiddleware
+
+# 本番環境のドメインを設定
+ALLOWED_ORIGINS = [
+    "https://my-ai-app-643484544688.asia-northeast1.run.app",  # 本番URL
+    "http://localhost:8000",  # ローカル開発用
+    "http://127.0.0.1:8000",  # ローカル開発用
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -234,6 +254,82 @@ def generate_token(length=8) -> str:
     import string
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
+def analyze_with_gemini_retry(file_path: str, max_retries: int = 3) -> dict:
+    """Gemini APIを使用して画像を解析（リトライ機能付き）"""
+    for attempt in range(max_retries):
+        try:
+            print(f"Gemini API attempt {attempt + 1}/{max_retries}...")
+            
+            # ファイルをアップロード
+            genai_file = genai.upload_file(path=file_path)
+            
+            # 処理待ち
+            while genai_file.state.name == "PROCESSING":
+                time.sleep(1)
+                genai_file = genai.get_file(genai_file.name)
+            
+            # 解析実行
+            response = model.generate_content([genai_file, PROMPT])
+            
+            if not response.text:
+                raise ValueError("Gemini APIからの応答が空です")
+            
+            # JSONをパース
+            data_list = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
+            
+            print(f"✅ Gemini analysis successful")
+            return data_list
+            
+        except Exception as e:
+            print(f"❌ Gemini API error (attempt {attempt + 1}): {str(e)}")
+            
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 指数バックオフ: 1秒, 2秒, 4秒
+                print(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                raise Exception(f"Gemini API解析に失敗しました（{max_retries}回試行）: {str(e)}")
+
+def compress_image(input_path: str, output_path: str = None, max_size: tuple = (1920, 1080), quality: int = 85) -> str:
+    """画像を圧縮してファイルサイズを削減"""
+    from PIL import Image
+    
+    if output_path is None:
+        output_path = input_path
+    
+    try:
+        with Image.open(input_path) as img:
+            # EXIF情報に基づいて画像を回転
+            try:
+                from PIL import ImageOps
+                img = ImageOps.exif_transpose(img)
+            except:
+                pass
+            
+            # RGBに変換（PNGのアルファチャンネル対応）
+            if img.mode in ('RGBA', 'LA', 'P'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # サイズ調整
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+            
+            # 保存
+            img.save(output_path, 'JPEG', optimize=True, quality=quality)
+            
+            print(f"✅ Image compressed: {input_path} -> {output_path}")
+            return output_path
+    except Exception as e:
+        print(f"⚠️ Image compression failed: {str(e)}, using original")
+        return input_path
+
+
+
 def check_usage_limit(u_id: str) -> bool:
     """使用上限をチェック"""
     user_doc = db.collection(COL_USERS).document(u_id).get()
@@ -302,6 +398,12 @@ PROMPT = """領収書を解析し [ { "date": "YYYY-MM-DD", "vendor_name": "..."
 @app.get("/")
 async def root():
     return FileResponse("index.html")
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Favicon（404エラー防止）"""
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 # ===== 認証エンドポイント =====
 
@@ -496,6 +598,11 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
             is_pdf = original_filename.lower().endswith('.pdf')
             print(f"Is PDF: {is_pdf}")
             
+            # 画像の場合は圧縮
+            if not is_pdf and file_ext.lower() in ['.jpg', '.jpeg', '.png', '.webp']:
+                print("Compressing image...")
+                temp_path = compress_image(temp_path, max_size=(1920, 1080), quality=85)
+            
             # 2. Cloud Storageへアップロード
             gcs_file_name = f"receipts/{safe_filename}"
             print(f"Uploading to GCS: {gcs_file_name}")
@@ -509,16 +616,9 @@ async def upload_receipt(files: List[UploadFile] = File(...), u_id: str = Depend
                 pdf_image_urls = convert_pdf_to_images(temp_path)
                 print(f"PDF images created: {len(pdf_image_urls)}")
             
-            # 4. Gemini 解析
+            # 4. Gemini 解析（リトライ機能付き）
             print("Starting Gemini analysis...")
-            genai_file = genai.upload_file(path=temp_path)
-            while genai_file.state.name == "PROCESSING": 
-                time.sleep(1)
-                genai_file = genai.get_file(genai_file.name)
-            response = model.generate_content([genai_file, PROMPT])
-            print(f"Gemini response received: {response.text[:100]}...")
-            
-            data_list = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
+            data_list = analyze_with_gemini_retry(temp_path, max_retries=3)
             
             # 5. サブコレクションに保存
             print("Saving to Firestore subcollection...")
@@ -1160,6 +1260,10 @@ def handle_image_message(event):
         with open(temp_path, "wb") as f:
             f.write(message_content.content)
         
+        # 画像を圧縮
+        print("Compressing image...")
+        temp_path = compress_image(temp_path, max_size=(1920, 1080), quality=85)
+        
         print("☁️ Uploading to GCS...")
         # GCSにアップロード
         gcs_file_name = f"line_receipts/{int(time.time())}.jpg"
@@ -1167,15 +1271,8 @@ def handle_image_message(event):
         print(f"GCS URL: {public_url}")
         
         print("🤖 Analyzing with Gemini...")
-        # Gemini解析
-        genai_file = genai.upload_file(path=temp_path)
-        while genai_file.state.name == "PROCESSING":
-            time.sleep(1)
-            genai_file = genai.get_file(genai_file.name)
-        
-        response = model.generate_content([genai_file, PROMPT])
-        print(f"Gemini response: {response.text[:100]}...")
-        data_list = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
+        # Gemini解析（リトライ機能付き）
+        data_list = analyze_with_gemini_retry(temp_path, max_retries=3)
         
         print("💾 Saving to Firestore...")
         # サブコレクションに保存
