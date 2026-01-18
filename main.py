@@ -1322,7 +1322,7 @@ def handle_image_message(event):
             TextSendMessage(text=f"❌ 画像の解析に失敗しました。\n\nエラー: {str(e)}\n\n別の画像で再度お試しください。")
         )
 
-# ===== Stripe連携エンドポイント（将来実装） =====
+# ===== Stripe連携エンドポイント （将来実装） =====
 
 @app.post("/api/checkout")
 async def create_checkout_session(data: dict, u_id: str = Depends(get_current_user)):
