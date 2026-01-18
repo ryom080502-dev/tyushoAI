@@ -271,3 +271,61 @@ async def bulk_delete_records(data: dict, u_id: str = Depends(get_current_user))
         "deleted": deleted_count,
         "failed": failed_count
     }
+
+@router.post("/api/records/bulk-update")
+async def bulk_update_records(data: dict, u_id: str = Depends(get_current_user)):
+    """複数レコードを一括更新（カテゴリ・日付の変更）"""
+    record_ids = data.get("record_ids", [])
+    update_fields = data.get("update_fields", {})
+
+    if not record_ids:
+        raise HTTPException(status_code=400, detail="更新するレコードが指定されていません")
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="更新するフィールドが指定されていません")
+
+    print(f"=== Bulk update request ===")
+    print(f"User: {u_id}")
+    print(f"Record IDs: {record_ids}")
+    print(f"Update fields: {update_fields}")
+
+    updated_count = 0
+    failed_count = 0
+
+    # 更新データを準備
+    update_data = {}
+
+    if "category" in update_fields and update_fields["category"]:
+        update_data["category"] = update_fields["category"]
+
+    if "date" in update_fields and update_fields["date"]:
+        update_data["date"] = update_fields["date"]
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="有効な更新フィールドがありません")
+
+    for record_id in record_ids:
+        try:
+            doc_ref = db.collection(config.COL_USERS).document(u_id).collection("records").document(record_id)
+            doc = doc_ref.get()
+
+            if doc.exists:
+                doc_ref.update(update_data)
+                updated_count += 1
+                print(f"[OK] Updated record {record_id}")
+            else:
+                print(f"[WARNING] Record {record_id} not found")
+                failed_count += 1
+        except Exception as e:
+            print(f"[ERROR] Failed to update {record_id}: {e}")
+            failed_count += 1
+
+    print(f"=== Bulk update complete ===")
+    print(f"Updated: {updated_count}, Failed: {failed_count}")
+
+    return {
+        "message": f"{updated_count}件のレコードを更新しました",
+        "updated": updated_count,
+        "failed": failed_count,
+        "update_fields": update_data
+    }

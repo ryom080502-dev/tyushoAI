@@ -217,11 +217,11 @@
                 </div>
             </div>
 
-            <!-- エクスポート&一括削除 -->
-            <div class="flex gap-4 mb-6">
-                <button onclick="toggleBulkDeleteMode()" id="bulkDeleteToggle" 
+            <!-- エクスポート&一括操作 -->
+            <div class="flex gap-4 mb-6 flex-wrap">
+                <button onclick="toggleBulkMode()" id="bulkModeToggle"
                         class="bg-white border px-6 py-3 rounded-xl font-bold hover:bg-slate-50 transition">
-                    一括削除
+                    一括操作
                 </button>
                 <button onclick="exportCSV()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-green-700 transition">
                     📊 CSV
@@ -234,21 +234,37 @@
                 </button>
             </div>
 
-            <!-- 一括削除ボタン -->
-            <div id="bulkDeleteActions" class="hidden mb-6 p-4 bg-red-50 rounded-xl flex justify-between items-center">
-                <p class="font-bold text-red-600"><span id="selectedCount">0</span>件選択中</p>
-                <div class="flex gap-2">
-                    <button onclick="selectAll()" class="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition">
-                        全て選択
+            <!-- 一括操作パネル -->
+            <div id="bulkActions" class="hidden mb-6 p-4 bg-slate-100 rounded-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <p class="font-bold text-slate-700"><span id="selectedCount">0</span>件選択中</p>
+                    <div class="flex gap-2">
+                        <button onclick="selectAll()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition">
+                            全て選択
+                        </button>
+                        <button onclick="deselectAll()" class="bg-slate-400 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-500 transition">
+                            選択解除
+                        </button>
+                        <button onclick="toggleBulkMode()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-300 transition">
+                            終了
+                        </button>
+                    </div>
+                </div>
+                <div class="flex gap-3 flex-wrap">
+                    <button onclick="openBulkEditModal()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition flex items-center gap-2">
+                        ✏️ 一括編集
                     </button>
-                    <button onclick="deselectAll()" class="bg-slate-400 text-white px-6 py-2 rounded-xl font-bold hover:bg-slate-500 transition">
-                        選択解除
+                    <button onclick="bulkDelete()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-red-700 transition flex items-center gap-2">
+                        🗑️ 一括削除
                     </button>
-                    <button onclick="bulkDelete()" class="bg-red-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-red-700 transition">
-                        選択したレコードを削除
+                    <button onclick="exportSelectedCSV()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-green-700 transition flex items-center gap-2">
+                        📊 選択分をCSV
                     </button>
-                    <button onclick="toggleBulkDeleteMode()" class="bg-slate-200 text-slate-700 px-6 py-2 rounded-xl font-bold hover:bg-slate-300 transition">
-                        キャンセル
+                    <button onclick="exportSelectedExcel()" class="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 transition flex items-center gap-2">
+                        📗 選択分をExcel
+                    </button>
+                    <button onclick="exportSelectedPDF()" class="bg-orange-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-orange-700 transition flex items-center gap-2">
+                        📕 選択分をPDF
                     </button>
                 </div>
             </div>
@@ -411,11 +427,61 @@
         </div>
     </div>
 
+    <!-- 一括編集モーダル -->
+    <div id="bulkEditModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-[2rem] shadow-2xl max-w-md w-full p-8">
+            <h2 class="text-2xl font-bold mb-6">一括編集</h2>
+
+            <div class="mb-4 p-4 bg-blue-50 rounded-xl">
+                <p class="text-blue-700 font-bold"><span id="bulkEditCount">0</span>件のレコードを編集</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="bulkEditCategoryCheck" onchange="toggleBulkEditField('category')" class="w-4 h-4">
+                        <span class="text-sm font-bold text-slate-700">カテゴリを変更</span>
+                    </label>
+                    <select id="bulkEditCategory" disabled class="w-full p-3 bg-slate-100 border rounded-xl">
+                        <option value="">選択してください</option>
+                        <option value="食費">🍽️ 食費</option>
+                        <option value="交通費">🚃 交通費</option>
+                        <option value="事務用品">🏢 事務用品</option>
+                        <option value="光熱費">💡 光熱費</option>
+                        <option value="通信費">📱 通信費</option>
+                        <option value="医療費">🏥 医療費</option>
+                        <option value="交際費">🎉 交際費</option>
+                        <option value="その他">📦 その他</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="bulkEditDateCheck" onchange="toggleBulkEditField('date')" class="w-4 h-4">
+                        <span class="text-sm font-bold text-slate-700">日付を変更</span>
+                    </label>
+                    <input type="date" id="bulkEditDate" disabled class="w-full p-3 bg-slate-100 border rounded-xl">
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button onclick="closeBulkEditModal()"
+                        class="flex-1 bg-slate-100 text-slate-700 px-6 py-3 rounded-xl font-bold hover:bg-slate-200 transition">
+                    キャンセル
+                </button>
+                <button onclick="confirmBulkEdit()"
+                        class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition">
+                    一括更新
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // グローバル変数
         let TOKEN = localStorage.getItem('token') || '';
         let USER_ROLE = localStorage.getItem('role') || 'user';
-        let isBulkDeleteMode = false;
+        let isBulkMode = false;
         let selectedRecords = new Set();
         let selectedFiles = [];
         let editingRecordId = null;
@@ -773,16 +839,16 @@
                 return `
                 <div class="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center">
                     <div class="flex gap-4 items-center">
-                        ${isBulkDeleteMode ? `
-                            <input type="checkbox" 
-                                   id="check-${r.id}" 
+                        ${isBulkMode ? `
+                            <input type="checkbox"
+                                   id="check-${r.id}"
                                    ${selectedRecords.has(r.id) ? 'checked' : ''}
                                    onchange="toggleRecordSelection('${r.id}')"
                                    class="w-5 h-5 cursor-pointer">
                         ` : ''}
                         <div class="relative">
-                            <img src="${displayUrl}" 
-                                 class="w-12 h-12 object-cover rounded-lg cursor-pointer hover:opacity-80 transition" 
+                            <img src="${displayUrl}"
+                                 class="w-12 h-12 object-cover rounded-lg cursor-pointer hover:opacity-80 transition"
                                  onclick='openImageModal(${JSON.stringify(allImages)})'
                                  title="クリックで拡大表示">
                             ${r.is_pdf ? '<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1 rounded">PDF</span>' : ''}
@@ -795,13 +861,13 @@
                     </div>
                     <div class="flex items-center gap-4">
                         <p class="text-xl font-black text-blue-600">¥${r.total_amount.toLocaleString()}</p>
-                        ${!isBulkDeleteMode ? `
-                            <button onclick='openEditModal(${JSON.stringify(r)})' 
+                        ${!isBulkMode ? `
+                            <button onclick='openEditModal(${JSON.stringify(r)})'
                                     class="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-100 transition"
                                     title="編集">
                                 ✏️
                             </button>
-                            <button onclick="deleteRecord('${r.id}', '${r.vendor_name}')" 
+                            <button onclick="deleteRecord('${r.id}', '${r.vendor_name}')"
                                     class="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-red-100 transition"
                                     title="削除">
                                 🗑️
@@ -1031,24 +1097,25 @@
             }
         }
 
-        // 一括削除
-        function toggleBulkDeleteMode() {
-            isBulkDeleteMode = !isBulkDeleteMode;
+        // 一括操作モード
+        function toggleBulkMode() {
+            isBulkMode = !isBulkMode;
             selectedRecords.clear();
 
-            const toggle = document.getElementById('bulkDeleteToggle');
-            const actions = document.getElementById('bulkDeleteActions');
+            const toggle = document.getElementById('bulkModeToggle');
+            const actions = document.getElementById('bulkActions');
 
-            if (isBulkDeleteMode) {
-                toggle.classList.add('bg-red-600', 'text-white');
-                toggle.textContent = '一括削除モード ON';
+            if (isBulkMode) {
+                toggle.classList.add('bg-blue-600', 'text-white');
+                toggle.textContent = '一括操作モード ON';
                 actions.classList.remove('hidden');
             } else {
-                toggle.classList.remove('bg-red-600', 'text-white');
-                toggle.textContent = '一括削除';
+                toggle.classList.remove('bg-blue-600', 'text-white');
+                toggle.textContent = '一括操作';
                 actions.classList.add('hidden');
             }
 
+            document.getElementById('selectedCount').textContent = 0;
             renderRecords(allRecords);
         }
 
@@ -1081,6 +1148,7 @@
             document.getElementById('selectedCount').textContent = 0;
         }
 
+        // 一括削除
         async function bulkDelete() {
             if (selectedRecords.size === 0) {
                 alert('削除するレコードを選択してください');
@@ -1106,7 +1174,7 @@
                     const data = await res.json();
                     alert(data.message);
                     selectedRecords.clear();
-                    toggleBulkDeleteMode();
+                    toggleBulkMode();
                     await loadStatus();
                 } else {
                     alert('削除に失敗しました');
@@ -1114,6 +1182,224 @@
             } catch (e) {
                 console.error(e);
                 alert('削除に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 一括編集モーダル
+        function openBulkEditModal() {
+            if (selectedRecords.size === 0) {
+                alert('編集するレコードを選択してください');
+                return;
+            }
+
+            document.getElementById('bulkEditCount').textContent = selectedRecords.size;
+            document.getElementById('bulkEditCategoryCheck').checked = false;
+            document.getElementById('bulkEditDateCheck').checked = false;
+            document.getElementById('bulkEditCategory').disabled = true;
+            document.getElementById('bulkEditDate').disabled = true;
+            document.getElementById('bulkEditCategory').value = '';
+            document.getElementById('bulkEditDate').value = '';
+
+            document.getElementById('bulkEditModal').classList.remove('hidden');
+        }
+
+        function closeBulkEditModal() {
+            document.getElementById('bulkEditModal').classList.add('hidden');
+        }
+
+        function toggleBulkEditField(field) {
+            if (field === 'category') {
+                const checked = document.getElementById('bulkEditCategoryCheck').checked;
+                const select = document.getElementById('bulkEditCategory');
+                select.disabled = !checked;
+                if (!checked) select.value = '';
+                select.classList.toggle('bg-slate-100', !checked);
+                select.classList.toggle('bg-white', checked);
+            } else if (field === 'date') {
+                const checked = document.getElementById('bulkEditDateCheck').checked;
+                const input = document.getElementById('bulkEditDate');
+                input.disabled = !checked;
+                if (!checked) input.value = '';
+                input.classList.toggle('bg-slate-100', !checked);
+                input.classList.toggle('bg-white', checked);
+            }
+        }
+
+        async function confirmBulkEdit() {
+            const categoryChecked = document.getElementById('bulkEditCategoryCheck').checked;
+            const dateChecked = document.getElementById('bulkEditDateCheck').checked;
+
+            if (!categoryChecked && !dateChecked) {
+                alert('変更する項目を選択してください');
+                return;
+            }
+
+            const updateFields = {};
+
+            if (categoryChecked) {
+                const category = document.getElementById('bulkEditCategory').value;
+                if (!category) {
+                    alert('カテゴリを選択してください');
+                    return;
+                }
+                updateFields.category = category;
+            }
+
+            if (dateChecked) {
+                const date = document.getElementById('bulkEditDate').value;
+                if (!date) {
+                    alert('日付を入力してください');
+                    return;
+                }
+                updateFields.date = date;
+            }
+
+            showLoading('一括更新中...', `${selectedRecords.size}件のレコードを更新しています`);
+
+            try {
+                const res = await authFetch('/api/records/bulk-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        record_ids: Array.from(selectedRecords),
+                        update_fields: updateFields
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(data.message);
+                    closeBulkEditModal();
+                    selectedRecords.clear();
+                    toggleBulkMode();
+                    await loadStatus();
+                } else {
+                    const error = await res.json();
+                    alert(`更新に失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('一括更新に失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // 選択エクスポート機能
+        async function exportSelectedCSV() {
+            if (selectedRecords.size === 0) {
+                alert('エクスポートするレコードを選択してください');
+                return;
+            }
+
+            showLoading('CSV作成中...', `${selectedRecords.size}件のレコードをエクスポートしています`);
+
+            try {
+                const res = await authFetch('/api/export/selected/csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        record_ids: Array.from(selectedRecords)
+                    })
+                });
+
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'receipts_selected.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    const error = await res.json();
+                    alert(`エクスポートに失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('CSVエクスポートに失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function exportSelectedExcel() {
+            if (selectedRecords.size === 0) {
+                alert('エクスポートするレコードを選択してください');
+                return;
+            }
+
+            showLoading('Excel作成中...', `${selectedRecords.size}件のレコードをエクスポートしています`);
+
+            try {
+                const res = await authFetch('/api/export/selected/excel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        record_ids: Array.from(selectedRecords)
+                    })
+                });
+
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'receipts_selected.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    const error = await res.json();
+                    alert(`エクスポートに失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Excelエクスポートに失敗しました');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function exportSelectedPDF() {
+            if (selectedRecords.size === 0) {
+                alert('エクスポートするレコードを選択してください');
+                return;
+            }
+
+            showLoading('PDF作成中...', `${selectedRecords.size}件のレコードをエクスポートしています`);
+
+            try {
+                const res = await authFetch('/api/export/selected/pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        record_ids: Array.from(selectedRecords)
+                    })
+                });
+
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'receipts_selected.pdf';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    const error = await res.json();
+                    alert(`エクスポートに失敗しました: ${error.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('PDFエクスポートに失敗しました');
             } finally {
                 hideLoading();
             }

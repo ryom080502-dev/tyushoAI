@@ -446,24 +446,46 @@ async function loadUsers() {
 
 ---
 
-## 6. 未解決の課題・次のタスク
-
-### **Phase 3: 一括操作機能の拡張** 【優先度: 中】
+### **Phase 3: 一括操作機能の拡張** 【完了✅】
 
 #### **実装内容**:
-1. **一括編集機能**:
-   - 複数レコードのカテゴリ一括変更
-   - 複数レコードの日付一括変更
+1. **バックエンド**:
+   - `routers/records.py`: 一括更新API追加
+     - `POST /api/records/bulk-update` - カテゴリ・日付の一括変更
+   - `routers/export.py`: 選択エクスポートAPI追加
+     - `POST /api/export/selected/csv`
+     - `POST /api/export/selected/excel`
+     - `POST /api/export/selected/pdf`
 
-2. **一括エクスポート**:
-   - 選択したレコードのみエクスポート（現在は全件のみ）
+2. **フロントエンド**:
+   - 一括編集モーダル追加（カテゴリ・日付のチェックボックス選択式）
+   - 「一括削除」→「一括操作」モードに拡張
+   - 選択エクスポート機能（CSV/Excel/PDF）
 
-#### **修正対象ファイル**:
-- `routers/records.py` - 一括更新API
-- `routers/export.py` - 選択エクスポート機能
-- `index.html` - 一括編集UI
+#### **UI変更点**:
+- 「一括削除」ボタン → 「一括操作」ボタンに変更
+- 一括操作モードで以下の操作が可能:
+  - ✏️ 一括編集（カテゴリ・日付）
+  - 🗑️ 一括削除
+  - 📊 選択分をCSV
+  - 📗 選択分をExcel
+  - 📕 選択分をPDF
+
+#### **JavaScript新規関数**:
+```javascript
+toggleBulkMode()        // 一括操作モードの切り替え
+openBulkEditModal()     // 一括編集モーダルを開く
+closeBulkEditModal()    // 一括編集モーダルを閉じる
+toggleBulkEditField()   // 編集フィールドの有効/無効切り替え
+confirmBulkEdit()       // 一括編集を実行
+exportSelectedCSV()     // 選択レコードをCSV出力
+exportSelectedExcel()   // 選択レコードをExcel出力
+exportSelectedPDF()     // 選択レコードをPDF出力
+```
 
 ---
+
+## 6. 未解決の課題・次のタスク
 
 ### **Phase 4: フロントエンドの完全モジュール化** 【優先度: 中】
 
