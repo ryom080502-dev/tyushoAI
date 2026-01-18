@@ -350,15 +350,26 @@
     </div>
 
     <!-- 画像モーダル -->
-    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
-        <button id="closeModalBtn" onclick="closeImageModal()" 
-                class="absolute top-4 right-4 text-white text-4xl font-bold hover:text-gray-300 z-10">
-            ×
-        </button>
-        <div id="pageInfo" class="absolute top-4 left-4 text-white text-lg font-bold bg-black bg-opacity-50 px-4 py-2 rounded-xl">
-            1 / 1
+    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col">
+        <!-- ヘッダー（固定） -->
+        <div class="flex justify-between items-center p-4 bg-black bg-opacity-50">
+            <div id="pageInfo" class="text-white text-lg font-bold px-4 py-2 rounded-xl">
+                1 / 1
+            </div>
+            <button id="closeModalBtn" onclick="closeImageModal()"
+                    class="text-white text-4xl font-bold hover:text-gray-300 px-4">
+                ×
+            </button>
         </div>
-        <img id="modalImage" src="" class="max-w-full max-h-full object-contain">
+        <!-- 画像コンテナ（スクロール可能） -->
+        <div id="imageContainer" class="flex-1 overflow-y-auto flex flex-col items-center p-4 gap-4">
+            <!-- 単一画像表示用 -->
+            <img id="modalImage" src="" class="max-w-full object-contain hidden">
+            <!-- 複数画像（PDF）表示用 -->
+            <div id="multiImageContainer" class="hidden w-full max-w-4xl space-y-4">
+                <!-- JavaScriptで動的に生成 -->
+            </div>
+        </div>
     </div>
 
     <!-- ユーザー作成モーダル -->
@@ -1409,17 +1420,53 @@
         function openImageModal(images) {
             currentImages = images;
             currentImageIndex = 0;
-            showImageAtIndex(0);
-            document.getElementById('imageModal').classList.remove('hidden');
+
+            const modal = document.getElementById('imageModal');
+            const singleImage = document.getElementById('modalImage');
+            const multiContainer = document.getElementById('multiImageContainer');
+            const pageInfo = document.getElementById('pageInfo');
+
+            if (images.length === 1) {
+                // 単一画像の場合
+                singleImage.src = images[0];
+                singleImage.classList.remove('hidden');
+                multiContainer.classList.add('hidden');
+                pageInfo.textContent = '1 / 1';
+            } else {
+                // 複数画像（PDF）の場合 - すべて縦に並べて表示
+                singleImage.classList.add('hidden');
+                multiContainer.classList.remove('hidden');
+                pageInfo.textContent = `全${images.length}ページ（スクロールで閲覧）`;
+
+                // 画像を動的に生成
+                multiContainer.innerHTML = images.map((url, idx) => `
+                    <div class="relative bg-white rounded-lg overflow-hidden shadow-lg">
+                        <div class="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-sm px-3 py-1 rounded-full">
+                            ${idx + 1} / ${images.length}
+                        </div>
+                        <img src="${url}" class="w-full" alt="ページ ${idx + 1}">
+                    </div>
+                `).join('');
+            }
+
+            modal.classList.remove('hidden');
+
+            // スクロール位置をリセット
+            document.getElementById('imageContainer').scrollTop = 0;
         }
 
         function showImageAtIndex(index) {
-            document.getElementById('modalImage').src = currentImages[index];
-            document.getElementById('pageInfo').textContent = `${index + 1} / ${currentImages.length}`;
+            // 単一画像モードの場合のみ使用
+            if (currentImages.length === 1) {
+                document.getElementById('modalImage').src = currentImages[index];
+                document.getElementById('pageInfo').textContent = `${index + 1} / ${currentImages.length}`;
+            }
         }
 
         function closeImageModal() {
             document.getElementById('imageModal').classList.add('hidden');
+            // コンテナをクリア
+            document.getElementById('multiImageContainer').innerHTML = '';
         }
 
         // 画像モーダルのキーボード操作
@@ -1428,12 +1475,16 @@
             if (!modal.classList.contains('hidden')) {
                 if (e.key === 'Escape') {
                     closeImageModal();
-                } else if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
-                    currentImageIndex--;
-                    showImageAtIndex(currentImageIndex);
-                } else if (e.key === 'ArrowRight' && currentImageIndex < currentImages.length - 1) {
-                    currentImageIndex++;
-                    showImageAtIndex(currentImageIndex);
+                }
+                // 単一画像の場合のみ左右キーでページ切り替え
+                if (currentImages.length === 1) {
+                    if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
+                        currentImageIndex--;
+                        showImageAtIndex(currentImageIndex);
+                    } else if (e.key === 'ArrowRight' && currentImageIndex < currentImages.length - 1) {
+                        currentImageIndex++;
+                        showImageAtIndex(currentImageIndex);
+                    }
                 }
             }
         });
@@ -1446,8 +1497,10 @@
                 const isImage = clickedElement.tagName === 'IMG';
                 const isCloseButton = clickedElement.closest('#closeModalBtn');
                 const isPageInfo = clickedElement.closest('#pageInfo');
+                const isImageContainer = clickedElement.closest('#multiImageContainer');
 
-                if (!isImage && !isCloseButton && !isPageInfo) {
+                // 画像、閉じるボタン、ページ情報、画像コンテナ以外をクリックした場合に閉じる
+                if (!isImage && !isCloseButton && !isPageInfo && !isImageContainer) {
                     closeImageModal();
                 }
             });
